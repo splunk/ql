@@ -14,12 +14,18 @@ name: "CodeQL"
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - 'scan_me'
     paths-ignore:
-      - 'lib/**'
+      - 'lookup_editor'
+      - 'src'
   pull_request:
     branches: [ "main" ]
+    paths:
+      - 'scan_me'
     paths-ignore:
-      - 'lib/**'
+      - 'lookup_editor'
+      - 'src'
   schedule:
     - cron: '38 1 * * 6'
 
