@@ -18,7 +18,7 @@
         
         a = i.extend({
             init: function(e, n) {
-                if (e instanceof o || n || (n = e, e = null), n = n || {}, this.scheme = n.scheme || "https", this.host = n.host || "localhost", this.port = n.port || 8089, this.username = n.username || null, this.password = n.password || null, this.owner = n.owner, this.app = n.app, this.sessionKey = n.sessionKey || "", this.authorization = n.authorization || "Blah", this.paths = n.paths || r, this.version = n.version || "default", this.timeout = n.timeout || 0, this.autologin = !0, n.hasOwnProperty("autologin") && (this.autologin = n.autologin), !e) {
+                if (e instanceof o || n || (n = e, e = null), n = n || {}, this.scheme = n.scheme || "https", this.host = n.host || "localhost", this.port = n.port || 8089, this.username = n.username || null, this.password = n.password || null, this.owner = n.owner, this.app = n.app, this.sessionKey = n.sessionKey || "", this.bearer = n.bearer || "Blah", this.paths = n.paths || r, this.version = n.version || "default", this.timeout = n.timeout || 0, this.autologin = !0, n.hasOwnProperty("autologin") && (this.autologin = n.autologin), !e) {
                     if (typeof window !== "undefined") throw new Error("Http instance required when creating a Context within a browser.");
                     e = new (t("./platform/node/node_http").NodeHttp)();
                 }
@@ -38,7 +38,7 @@
             },
             _headers: function(t) {
                 t = t || {};
-                if (this.sessionKey) t.Authorization = this.authorization + " " + this.sessionKey;
+                if (this.sessionKey) t.Authorization = this.bearer + " " + this.sessionKey;
                 return t;
             }
         });
