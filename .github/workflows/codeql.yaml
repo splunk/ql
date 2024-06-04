@@ -16,16 +16,10 @@ on:
     branches: [ "main" ]
     paths:
       - 'scan_me'
-    paths-ignore:
-      - 'lookup_editor'
-      - 'src'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'scan_me'
-    paths-ignore:
-      - 'lookup_editor'
-      - 'src'
   schedule:
     - cron: '38 1 * * 6'
 
