@@ -14,15 +14,14 @@ name: "CodeQL"
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - 'lib/**'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - 'lib/**'
   schedule:
     - cron: '38 1 * * 6'
-
-
-paths-ignore:
-  - lookup_editor
-  - src/bearer.js
 
 jobs:
   analyze:
