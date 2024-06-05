@@ -2012,7 +2012,7 @@ console.log(ret);
 
                 // Ignore changes if the value is the same
                 if (obj.options.data[y][x] == value) {
-                    cell.innerHTML = obj.edition[1];
+                    cell.innerHTML = obj.edition[1].replace(/[<>"'`; \r\n]/g, '');
                 } else {
                     obj.setValue(cell, value);
                 }
@@ -2397,7 +2397,7 @@ console.log(ret);
                         obj.records[y][x].innerHTML = '';
                         if (value && value.substr(0, 10) == 'data:image') {
                             var img = document.createElement('img');
-                            img.src = value;
+                            img.src = value.replace(/[<>"'`; \r\n]/g, '');
                             obj.records[y][x].appendChild(img);
                         }
                     } else {
@@ -13169,10 +13169,10 @@ console.log(ret);
                         if (result !== '') {
                           result += '\n';
                         }
-                        result += (line.replace(/<(?:.|\n)*?>/gm, ''));
+                        result += (line.replace(/<\/?[^>]+(>|$)/g, ''));
                     });
                 } else {
-                    result = value.replace(/<(?:.|\n)*?>/gm, '');
+                    result = value.replace(/<\/?[^>]+(>|$)/g, '');
                 }
             }
 
