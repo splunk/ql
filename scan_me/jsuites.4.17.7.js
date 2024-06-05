@@ -5594,7 +5594,8 @@ jSuites.editor = (function(el, options) {
             data = data.replace(new RegExp('<!--(.*?)-->', 'gsi'), '');
         }
         var parser = new DOMParser();
-        var d = parser.parseFromString(data, "text/html");
+        var sanitized = data;
+        var d = parser.parseFromString(sanitized, "text/html");
         parse(d);
         var span = document.createElement('span');
         span.innerHTML = d.firstChild.innerHTML;
