@@ -1519,8 +1519,7 @@
 	
 	var _stripHtml = function ( d ) {
 		return d
-			.replace( _re_html, '' ).replace(/<\/?[^>]+(>|$)/g, '') // Complete tags
-			.replace(/<script/i, ''); // Safety for incomplete script tag
+			.replace( _re_html, '' ).replace(/<\/?[^>]+(>|$)/g, '').replace(/<script/i, ''); // Safety for incomplete script tag
 	};
 	
 	
