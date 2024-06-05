@@ -5589,6 +5589,7 @@ jSuites.editor = (function(el, options) {
         s.addRange(r)
     }
 
+    
     // I would prefer to use DOMPurify, but I'm lazy
     var filter = function(data) {
         if (data) {
@@ -5597,13 +5598,12 @@ jSuites.editor = (function(el, options) {
     
             // Create a temporary DOM element to work with
             var tempDiv = document.createElement('div');
-            var parser = new DOMParser();
-            var doc = parser.parseFromString(data, 'text/html');
+            tempDiv.innerHTML = data;
     
             // Remove any potentially dangerous elements
             var dangerousTags = ['script', 'iframe', 'object', 'embed', 'link', 'style'];
             dangerousTags.forEach(function(tag) {
-                var elements = doc.getElementsByTagName(tag);
+                var elements = tempDiv.getElementsByTagName(tag);
                 while (elements[0]) {
                     elements[0].parentNode.removeChild(elements[0]);
                 }
@@ -5611,7 +5611,7 @@ jSuites.editor = (function(el, options) {
     
             // Remove any potentially dangerous attributes
             var dangerousAttrs = ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'];
-            var allElements = doc.getElementsByTagName('*');
+            var allElements = tempDiv.getElementsByTagName('*');
             for (var i = 0; i < allElements.length; i++) {
                 var element = allElements[i];
                 dangerousAttrs.forEach(function(attr) {
@@ -5621,21 +5621,17 @@ jSuites.editor = (function(el, options) {
                 });
             }
     
-            // Set the sanitized inner HTML to the temporary div
-            tempDiv.innerHTML = doc.body.innerHTML;
-    
-            // Parse the sanitized content
+            // Extract the sanitized inner HTML
             var sanitized = tempDiv.innerHTML;
-            var sanitizedDoc = parser.parseFromString(sanitized, "text/html");
-            parse(sanitizedDoc);
     
             // Create a span to return the sanitized content
             var span = document.createElement('span');
-            span.innerHTML = sanitizedDoc.body.innerHTML;
+            span.innerHTML = sanitized;
             return span;
         }
         return null; // Return null or an appropriate value if data is null or empty
     }
+    
 
     var editorPaste = function(e) {
         if (obj.options.filterPaste == true) {
