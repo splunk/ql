@@ -1519,7 +1519,7 @@
 	
 	var _stripHtml = function ( d ) {
 		return d
-			.replace(/<\/?[^>]+(>|$)/g, '').replace(/<script/i, ''); // Safety for incomplete script tag
+			.replace(/<\/?[^>]+(>|$)/g, ''); // Safety for incomplete script tag
 	};
 	
 	
@@ -15055,8 +15055,7 @@
 				typeof data === 'string' ?
 					data
 						.replace( _re_new_lines, " " )
-						.replace(/<\/?[^>]+(>|$)/g, ''):
-					'';
+						.replace(/<\/?[^>]+(>|$)/g, '');
 		},
 	
 		string: function ( data ) {
