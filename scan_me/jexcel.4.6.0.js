@@ -2450,8 +2450,9 @@ if (! jSuites && typeof(require) === 'function') {
                         obj.options.data[y][x] = value;
                         obj.records[y][x].innerHTML = '';
                         if (value && value.substr(0, 10) == 'data:image') {
+                            sanitizedValue = value;
                             var img = document.createElement('img');
-                            img.src = value;
+                            img.src = sanitizedValue;
                             obj.records[y][x].appendChild(img);
                         }
                     } else {
