@@ -15,12 +15,19 @@
 
     'use strict';
 
-var jSuites = function(options) {
-    var obj = {}
-    var version = '4.9.11';
+var jSuites = {};
+
+var Version = '4.17.6';
+
+var Events = function() {
+
+    document.jsuitesComponents = [];
 
     var find = function(DOMElement, component) {
         if (DOMElement[component.type] && DOMElement[component.type] == component) {
+            return true;
+        }
+        if (DOMElement.component && DOMElement.component == component) {
             return true;
         }
         if (DOMElement.parentNode) {
@@ -30,123 +37,431 @@ var jSuites = function(options) {
     }
 
     var isOpened = function(e) {
-        if (jSuites.current.length > 0) {
-            for (var i = 0; i < jSuites.current.length; i++) {
-                if (jSuites.current[i] && ! find(e.target, jSuites.current[i])) {
-                    jSuites.current[i].close();
+        if (document.jsuitesComponents && document.jsuitesComponents.length > 0) {
+            for (var i = 0; i < document.jsuitesComponents.length; i++) {
+                if (document.jsuitesComponents[i] && ! find(e, document.jsuitesComponents[i])) {
+                    document.jsuitesComponents[i].close();
                 }
             }
         }
     }
 
-    obj.init = function() {
-        document.addEventListener("click", isOpened);
+    // Width of the border
+    var cornerSize = 15;
 
-        obj.version = version;
+    // Current element
+    var element = null;
+
+    // Controllers
+    var editorAction = false;
+
+    // Event state
+    var state = {
+        x: null,
+        y: null,
     }
 
-    obj.tracking = function(component, state) {
-        if (state == true) {
-            jSuites.current = jSuites.current.filter(function(v) {
-                return v !== null;
-            });
+    // Tooltip element
+    var tooltip = document.createElement('div')
+    tooltip.classList.add('jtooltip');
 
-            // Start after all events
-            setTimeout(function() {
-                jSuites.current.push(component);
-            }, 0);
-
-        } else {
-            var index = jSuites.current.indexOf(component);
-            if (index >= 0) {
-                jSuites.current[index] = null;
+    // Events
+    var mouseDown = function(e) {
+        // Check if this is the floating
+        var item = jSuites.findElement(e.target, 'jpanel');
+        // Jfloating found
+        if (item && ! item.classList.contains("readonly")) {
+            // Add focus to the chart container
+            item.focus();
+            // Keep the tracking information
+            var rect = e.target.getBoundingClientRect();
+            editorAction = {
+                e: item,
+                x: e.clientX,
+                y: e.clientY,
+                w: rect.width,
+                h: rect.height,
+                d: item.style.cursor,
+                resizing: item.style.cursor ? true : false,
+                actioned: false,
             }
+
+            // Make sure width and height styling is OK
+            if (! item.style.width) {
+                item.style.width = rect.width + 'px';
+            }
+
+            if (! item.style.height) {
+                item.style.height = rect.height + 'px';
+            }
+
+            // Remove any selection from the page
+            var s = window.getSelection();
+            if (s.rangeCount) {
+                for (var i = 0; i < s.rangeCount; i++) {
+                    s.removeRange(s.getRangeAt(i));
+                }
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+        } else {
+            // No floating action found
+            editorAction = false;
         }
+
+        // Verify current components tracking
+        if (e.changedTouches && e.changedTouches[0]) {
+            var x = e.changedTouches[0].clientX;
+            var y = e.changedTouches[0].clientY;
+        } else {
+            var x = e.clientX;
+            var y = e.clientY;
+        }
+
+        // Which component I am clicking
+        var path = e.path || (e.composedPath && e.composedPath());
+
+        // If path available get the first element in the chain
+        if (path) {
+            element = path[0];
+        } else {
+            // Try to guess using the coordinates
+            if (e.target && e.target.shadowRoot) {
+                var d = e.target.shadowRoot;
+            } else {
+                var d = document;
+            }
+            // Get the first target element
+            element = d.elementFromPoint(x, y);
+        }
+
+        isOpened(element);
     }
 
-    /**
-     * Get or set a property from a JSON from a string.
-     */
-    obj.path = function(str, val) {
-        str = str.split('.');
-        if (str.length) {
-            var o = this;
-            var p = null;
-            while (str.length > 1) {
-                // Get the property
-                p = str.shift();
-                // Check if the property exists
-                if (o.hasOwnProperty(p)) {
-                    o = o[p];
-                } else {
-                    // Property does not exists
-                    if (val === undefined) {
-                        return undefined;
+    var mouseUp = function(e) {
+        if (editorAction && editorAction.e) {
+            if (typeof(editorAction.e.refresh) == 'function' && state.actioned) {
+                editorAction.e.refresh();
+            }
+            editorAction.e.style.cursor = '';
+        }
+
+        // Reset
+        state = {
+            x: null,
+            y: null,
+        }
+
+        editorAction = false;
+    }
+
+    var mouseMove = function(e) {
+        if (editorAction) {
+            var x = e.clientX || e.pageX;
+            var y = e.clientY || e.pageY;
+
+            // Action on going
+            if (! editorAction.resizing) {
+                if (state.x == null && state.y == null) {
+                    state.x = x;
+                    state.y = y;
+                }
+
+                var dx = x - state.x;
+                var dy = y - state.y;
+                var top = editorAction.e.offsetTop + dy;
+                var left = editorAction.e.offsetLeft + dx;
+
+                // Update position
+                editorAction.e.style.top = top + 'px';
+                editorAction.e.style.left = left + 'px';
+                editorAction.e.style.cursor = "move";
+
+                state.x = x;
+                state.y = y;
+
+
+                // Update element
+                if (typeof(editorAction.e.refresh) == 'function') {
+                    state.actioned = true;
+                    editorAction.e.refresh('position', top, left);
+                }
+            } else {
+                var width = null;
+                var height = null;
+
+                if (editorAction.d == 'e-resize' || editorAction.d == 'ne-resize' || editorAction.d == 'se-resize') {
+                    // Update width
+                    width = editorAction.w + (x - editorAction.x);
+                    editorAction.e.style.width = width + 'px';
+
+                    // Update Height
+                    if (e.shiftKey) {
+                        var newHeight = (x - editorAction.x) * (editorAction.h / editorAction.w);
+                        height = editorAction.h + newHeight;
+                        editorAction.e.style.height = height + 'px';
                     } else {
-                        // Create the property
-                        o[p] = {};
-                        // Next property
-                        o = o[p];
+                        var newHeight = false;
+                    }
+                }
+
+                if (! newHeight) {
+                    if (editorAction.d == 's-resize' || editorAction.d == 'se-resize' || editorAction.d == 'sw-resize') {
+                        height = editorAction.h + (y - editorAction.y);
+                        editorAction.e.style.height = height + 'px';
+                    }
+                }
+
+                // Update element
+                if (typeof(editorAction.e.refresh) == 'function') {
+                    state.actioned = true;
+                    editorAction.e.refresh('dimensions', width, height);
+                }
+            }
+        } else {
+            // Resizing action
+            var item = jSuites.findElement(e.target, 'jpanel');
+            // Found eligible component
+            if (item) {
+                if (item.getAttribute('tabindex')) {
+                    var rect = item.getBoundingClientRect();
+                    if (e.clientY - rect.top < cornerSize) {
+                        if (rect.width - (e.clientX - rect.left) < cornerSize) {
+                            item.style.cursor = 'ne-resize';
+                        } else if (e.clientX - rect.left < cornerSize) {
+                            item.style.cursor = 'nw-resize';
+                        } else {
+                            item.style.cursor = 'n-resize';
+                        }
+                    } else if (rect.height - (e.clientY - rect.top) < cornerSize) {
+                        if (rect.width - (e.clientX - rect.left) < cornerSize) {
+                            item.style.cursor = 'se-resize';
+                        } else if (e.clientX - rect.left < cornerSize) {
+                            item.style.cursor = 'sw-resize';
+                        } else {
+                            item.style.cursor = 's-resize';
+                        }
+                    } else if (rect.width - (e.clientX - rect.left) < cornerSize) {
+                        item.style.cursor = 'e-resize';
+                    } else if (e.clientX - rect.left < cornerSize) {
+                        item.style.cursor = 'w-resize';
+                    } else {
+                        item.style.cursor = '';
                     }
                 }
             }
-            // Get the property
-            p = str.shift();
-            // Set or get the value
-            if (val !== undefined) {
-                o[p] = val;
-                // Success
-                return true;
+        }
+    }
+
+    var mouseOver = function(e) {
+        var message = e.target.getAttribute('data-tooltip');
+        if (message) {
+            // Instructions
+            tooltip.innerText = message;
+
+            // Position
+            if (e.changedTouches && e.changedTouches[0]) {
+                var x = e.changedTouches[0].clientX;
+                var y = e.changedTouches[0].clientY;
             } else {
-                // Return the value
-                return o[p];
+                var x = e.clientX;
+                var y = e.clientY;
             }
-        }
-        // Something went wrong
-        return false;
-    }
 
-    // Update dictionary
-    obj.setDictionary = function(d) {
-        obj.dictionary = d;
-
-        // Translations
-        var t = null;
-        for (var i = 0; i < jSuites.calendar.weekdays.length; i++) {
-            t =  jSuites.translate(jSuites.calendar.weekdays[i]);
-            if (jSuites.calendar.weekdays[i]) {
-                jSuites.calendar.weekdays[i] = t;
-                jSuites.calendar.weekdaysShort[i] = t.substr(0,3);
-            }
-        }
-        for (var i = 0; i < jSuites.calendar.months.length; i++) {
-            t = jSuites.translate(jSuites.calendar.months[i]);
-            if (t) {
-                jSuites.calendar.months[i] = t;
-                jSuites.calendar.monthsShort[i] = t.substr(0,3);
-            }
+            tooltip.style.top = y + 'px';
+            tooltip.style.left = x + 'px';
+            document.body.appendChild(tooltip);
+        } else if (tooltip.innerText) {
+            tooltip.innerText = '';
+            document.body.removeChild(tooltip);
         }
     }
 
-    // Dictionary
-    obj.dictionary = {};
-
-    // Translate
-    obj.translate = function(t) {
-        return obj.dictionary[t] || t;
+    var dblClick = function(e) {
+        var item = jSuites.findElement(e.target, 'jpanel');
+        if (item && typeof(item.dblclick) == 'function') {
+            // Create edition
+            item.dblclick(e);
+        }
     }
 
-    // Array of opened components
-    obj.current = [];
+    var contextMenu = function(e) {
+        var item = document.activeElement;
+        if (item && typeof(item.contextmenu) == 'function') {
+            // Create edition
+            item.contextmenu(e);
 
-    return obj;
-}();
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        } else {
+            // Search for possible context menus
+            item = jSuites.findElement(e.target, function(o) {
+                return o.tagName && o.getAttribute('aria-contextmenu-id');
+            });
+
+            if (item) {
+                var o = document.querySelector('#' + item);
+                if (! o) {
+                    console.error('JSUITES: contextmenu id not found: ' + item);
+                } else {
+                    o.contextmenu.open(e);
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                }
+            }
+        }
+    }
+
+    var keyDown = function(e) {
+        var item = document.activeElement;
+        if (item) {
+            if (e.key == "Delete" && typeof(item.delete) == 'function') {
+                item.delete();
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            }
+        }
+
+        if (document.jsuitesComponents && document.jsuitesComponents.length) {
+            if (item = document.jsuitesComponents[document.jsuitesComponents.length - 1]) {
+                if (e.key == "Escape" && typeof(item.isOpened) == 'function' && typeof(item.close) == 'function') {
+                    if (item.isOpened()) {
+                        item.close();
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                    }
+                }
+            }
+        }
+    }
+
+    document.addEventListener('mouseup', mouseUp);
+    document.addEventListener("mousedown", mouseDown);
+    document.addEventListener('mousemove', mouseMove);
+    document.addEventListener('mouseover', mouseOver);
+    document.addEventListener('dblclick', dblClick);
+    document.addEventListener('keydown', keyDown);
+    document.addEventListener('contextmenu', contextMenu);
+}
 
 /**
  * Global jsuites event
  */
-if (typeof(document) !== "undefined") {
-    jSuites.init();
+if (typeof(document) !== "undefined" && ! document.jsuitesComponents) {
+    Events();
+}
+
+jSuites.version = Version;
+
+jSuites.setExtensions = function(o) {
+    if (typeof(o) == 'object') {
+        var k = Object.keys(o);
+        for (var i = 0; i < k.length; i++) {
+            jSuites[k[i]] = o[k[i]];
+        }
+    }
+}
+
+jSuites.tracking = function(component, state) {
+    if (state == true) {
+        document.jsuitesComponents = document.jsuitesComponents.filter(function(v) {
+            return v !== null;
+        });
+
+        // Start after all events
+        setTimeout(function() {
+            document.jsuitesComponents.push(component);
+        }, 0);
+
+    } else {
+        var index = document.jsuitesComponents.indexOf(component);
+        if (index >= 0) {
+            document.jsuitesComponents.splice(index, 1);
+        }
+    }
+}
+
+/**
+ * Get or set a property from a JSON from a string.
+ */
+jSuites.path = function(str, val) {
+    str = str.split('.');
+    if (str.length) {
+        var o = this;
+        var p = null;
+        while (str.length > 1) {
+            // Get the property
+            p = str.shift();
+            // Check if the property exists
+            if (o.hasOwnProperty(p)) {
+                o = o[p];
+            } else {
+                // Property does not exists
+                if (val === undefined) {
+                    return undefined;
+                } else {
+                    // Create the property
+                    o[p] = {};
+                    // Next property
+                    o = o[p];
+                }
+            }
+        }
+        // Get the property
+        p = str.shift();
+        // Set or get the value
+        if (val !== undefined) {
+            o[p] = val;
+            // Success
+            return true;
+        } else {
+            // Return the value
+            if (o) {
+                return o[p];
+            }
+        }
+    }
+    // Something went wrong
+    return false;
+}
+
+// Update dictionary
+jSuites.setDictionary = function(d) {
+    if (! document.dictionary) {
+        document.dictionary = {}
+    }
+    // Replace the key into the dictionary and append the new ones
+    var k = Object.keys(d);
+    for (var i = 0; i < k.length; i++) {
+        document.dictionary[k[i]] = d[k[i]];
+    }
+
+    // Translations
+    var t = null;
+    for (var i = 0; i < jSuites.calendar.weekdays.length; i++) {
+        t =  jSuites.translate(jSuites.calendar.weekdays[i]);
+        if (jSuites.calendar.weekdays[i]) {
+            jSuites.calendar.weekdays[i] = t;
+            jSuites.calendar.weekdaysShort[i] = t.substr(0,3);
+        }
+    }
+    for (var i = 0; i < jSuites.calendar.months.length; i++) {
+        t = jSuites.translate(jSuites.calendar.months[i]);
+        if (t) {
+            jSuites.calendar.months[i] = t;
+            jSuites.calendar.monthsShort[i] = t.substr(0,3);
+        }
+    }
+}
+
+// Translate
+jSuites.translate = function(t) {
+    if (typeof(document) !== "undefined" && document.dictionary) {
+        return document.dictionary[t] || t;
+     } else {
+        return t;
+     }
 }
 
 jSuites.ajax = (function(options, complete) {
@@ -187,25 +502,31 @@ jSuites.ajax = (function(options, complete) {
 
     if (options.data) {
         // Parse object to variables format
-        var parseData = function(value, key) {
+        var parseData = function (value, key) {
             var vars = [];
-            var keys = Object.keys(value);
-            if (keys.length) {
-                for (var i = 0; i < keys.length; i++) {
-                    if (key) {
-                        var k = key + '[' + keys[i] + ']';
-                    } else {
-                        var k = keys[i];
-                    }
-
-                    if (typeof(value[keys[i]]) == 'object') {
-                        var r = parseData(value[keys[i]], k);
-                        var o = Object.keys(r);
-                        for (var j = 0; j < o.length; j++) {
-                            vars[o[j]] = r[o[j]];
+            if (value) {
+                var keys = Object.keys(value);
+                if (keys.length) {
+                    for (var i = 0; i < keys.length; i++) {
+                        if (key) {
+                            var k = key + '[' + keys[i] + ']';
+                        } else {
+                            var k = keys[i];
                         }
-                    } else {
-                        vars[k] = value[keys[i]];
+
+                        if (value[k] instanceof FileList) {
+                            vars[k] = value[keys[i]];
+                        } else if (value[keys[i]] === null || value[keys[i]] === undefined) {
+                            vars[k] = '';
+                        } else if (typeof(value[keys[i]]) == 'object') {
+                            var r = parseData(value[keys[i]], k);
+                            var o = Object.keys(r);
+                            for (var j = 0; j < o.length; j++) {
+                                vars[o[j]] = r[o[j]];
+                            }
+                        } else {
+                            vars[k] = value[keys[i]];
+                        }
                     }
                 }
             }
@@ -213,18 +534,35 @@ jSuites.ajax = (function(options, complete) {
             return vars;
         }
 
-        var data = [];
         var d = parseData(options.data);
         var k = Object.keys(d);
-        for (var i = 0; i < k.length; i++) {
-            data.push(k[i] + '=' + encodeURIComponent(d[k[i]]));
-        }
 
-        if (options.method == 'GET' && data.length > 0) {
-            if (options.url.indexOf('?') < 0) {
-                options.url += '?';
+        // Data form
+        if (options.method == 'GET') {
+            if (k.length) {
+                var data = [];
+                for (var i = 0; i < k.length; i++) {
+                    data.push(k[i] + '=' + encodeURIComponent(d[k[i]]));
+                }
+
+                if (options.url.indexOf('?') < 0) {
+                    options.url += '?';
+                }
+                options.url += data.join('&');
             }
-            options.url += data.join('&');
+        } else {
+            var data = new FormData();
+            for (var i = 0; i < k.length; i++) {
+                if (d[k[i]] instanceof FileList) {
+                    if (d[k[i]].length) {
+                        for (var j = 0; j < d[k[i]].length; j++) {
+                            data.append(k[i], d[k[i]][j], d[k[i]][j].name);
+                        }
+                    }
+                } else {
+                    data.append(k[i], d[k[i]]);
+                }
+            }
         }
     }
 
@@ -232,16 +570,25 @@ jSuites.ajax = (function(options, complete) {
     httpRequest.open(options.method, options.url, true);
     httpRequest.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
 
+    // Content type
+    if (options.contentType) {
+        httpRequest.setRequestHeader('Content-Type', options.contentType);
+    }
+
+    // Headers
     if (options.method == 'POST') {
         httpRequest.setRequestHeader('Accept', 'application/json');
-        httpRequest.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
     } else {
-        if (options.dataType == 'json') {
-            httpRequest.setRequestHeader('Content-Type', 'text/json');
-        } else if (options.dataType == 'blob') {
+        if (options.dataType == 'blob') {
             httpRequest.responseType = "blob";
-        } else if (options.dataType == 'html') {
-            httpRequest.setRequestHeader('Content-Type', 'text/html');
+        } else {
+            if (! options.contentType) {
+                if (options.dataType == 'json') {
+                    httpRequest.setRequestHeader('Content-Type', 'text/json');
+                } else if (options.dataType == 'html') {
+                    httpRequest.setRequestHeader('Content-Type', 'text/html');
+                }
+            }
         }
     }
 
@@ -259,6 +606,15 @@ jSuites.ajax = (function(options, complete) {
     // Before send
     if (typeof(options.beforeSend) == 'function') {
         options.beforeSend(httpRequest);
+    }
+
+    // Before send
+    if (typeof(jSuites.ajax.beforeSend) == 'function') {
+        jSuites.ajax.beforeSend(httpRequest);
+    }
+
+    if (document.ajax && typeof(document.ajax.beforeSend) == 'function') {
+        document.ajax.beforeSend(httpRequest);
     }
 
     httpRequest.onload = function() {
@@ -352,7 +708,11 @@ jSuites.ajax = (function(options, complete) {
 
 jSuites.ajax.send = function(httpRequest) {
     if (httpRequest.data) {
-        httpRequest.send(httpRequest.data.join('&'));
+        if (Array.isArray(httpRequest.data)) {
+            httpRequest.send(httpRequest.data.join('&'));
+        } else {
+            httpRequest.send(httpRequest.data);
+        }
     } else {
         httpRequest.send();
     }
@@ -542,7 +902,6 @@ jSuites.calendar = (function(el, options) {
             months: jSuites.calendar.monthsShort,
             monthsFull: jSuites.calendar.months,
             weekdays: jSuites.calendar.weekdays,
-            weekdays_short: jSuites.calendar.weekdays,
             textDone: jSuites.translate('Done'),
             textReset: jSuites.translate('Reset'),
             textUpdate: jSuites.translate('Update'),
@@ -562,10 +921,8 @@ jSuites.calendar = (function(el, options) {
             position: null,
             // Data type
             dataType: null,
-        }
-
-        for (var i = 0; i < defaults.weekdays_short.length; i++) {
-            defaults.weekdays_short[i] = defaults.weekdays_short[i].substr(0,1);
+            // Controls
+            controls: true,
         }
 
         // Loop through our object
@@ -602,7 +959,7 @@ jSuites.calendar = (function(el, options) {
 
         if (jSuites.isNumeric(obj.options.value) && obj.options.value > 0) {
             obj.options.value = jSuites.calendar.numToDate(obj.options.value);
-            // Data type numberic
+            // Data type numeric
             obj.options.dataType = 'numeric';
         }
 
@@ -810,6 +1167,8 @@ jSuites.calendar = (function(el, options) {
             if (! newValue) {
                 obj.date = null;
                 var val = '';
+                el.classList.remove('jcalendar_warning');
+                el.title = '';
             } else {
                 var value = obj.setLabel(newValue, obj.options);
                 var date = newValue.split(' ');
@@ -825,6 +1184,35 @@ jSuites.calendar = (function(el, options) {
                 var i = parseInt(time[1]);
                 obj.date = [ y, m, d, h, i, 0 ];
                 var val = obj.setLabel(newValue, obj.options);
+
+                // Current selection day
+                var current = jSuites.calendar.now(new Date(y, m-1, d), true);
+
+                // Available ranges
+                if (obj.options.validRange) {
+                    if (! obj.options.validRange[0] || current >= obj.options.validRange[0]) {
+                        var test1 = true;
+                    } else {
+                        var test1 = false;
+                    }
+
+                    if (! obj.options.validRange[1] || current <= obj.options.validRange[1]) {
+                        var test2 = true;
+                    } else {
+                        var test2 = false;
+                    }
+
+                    if (! (test1 && test2)) {
+                        el.classList.add('jcalendar_warning');
+                        el.title = jSuites.translate('Date outside the valid range');
+                    } else {
+                        el.classList.remove('jcalendar_warning');
+                        el.title = '';
+                    }
+                } else {
+                    el.classList.remove('jcalendar_warning');
+                    el.title = '';
+                }
             }
 
             // New value
@@ -837,9 +1225,9 @@ jSuites.calendar = (function(el, options) {
             // Lemonade JS
             if (el.value != val) {
                 el.value = val;
-                if (typeof(el.onchange) == 'function') {
-                    el.onchange({
-                        type: 'change',
+                if (typeof(el.oninput) == 'function') {
+                    el.oninput({
+                        type: 'input',
                         target: el,
                         value: el.value
                     });
@@ -848,6 +1236,10 @@ jSuites.calendar = (function(el, options) {
         }
 
         obj.getDays();
+        // Render months
+        if (obj.options.type == 'year-month-picker') {
+            obj.getMonths();
+        }
     }
 
     obj.getValue = function() {
@@ -877,6 +1269,7 @@ jSuites.calendar = (function(el, options) {
 
             if (element.classList.contains('jcalendar-set-month')) {
                 obj.date[1] = v;
+                obj.date[2] = 1; // first day of the month
             } else {
                 obj.date[2] = element.innerText;
             }
@@ -957,7 +1350,7 @@ jSuites.calendar = (function(el, options) {
         for (var i = 0; i < 7; i++) {
             var cell = document.createElement('td');
             cell.classList.add('jcalendar-weekday')
-            cell.innerHTML = obj.options.weekdays_short[index];
+            cell.innerHTML = obj.options.weekdays[index].substr(0,1);
             row.appendChild(cell);
             // Next week day
             index++;
@@ -976,8 +1369,8 @@ jSuites.calendar = (function(el, options) {
             // Reset cells container
             var row = document.createElement('tr');
             row.setAttribute('align', 'center');
-            // Data control
-            var emptyRow = true;
+            row.style.height = '34px';
+
             // Create cells
             for (var i = 0; i < 7; i++) {
                 // Create cell
@@ -1020,9 +1413,6 @@ jSuites.calendar = (function(el, options) {
                             cell.classList.add('jcalendar-disabled');
                         }
                     }
-
-                    // Control
-                    emptyRow = false;
                 }
                 // Day cell
                 row.appendChild(cell);
@@ -1031,9 +1421,7 @@ jSuites.calendar = (function(el, options) {
             }
 
             // Add cell to the calendar body
-            if (emptyRow == false) {
-                calendarBody.appendChild(row);
-            }
+            calendarBody.appendChild(row);
         }
 
         // Show time controls
@@ -1295,7 +1683,6 @@ jSuites.calendar = (function(el, options) {
 
         calendarContainer = document.createElement('div');
         calendarContainer.className = 'jcalendar-container';
-
         calendarContent = document.createElement('div');
         calendarContent.className = 'jcalendar-content';
         calendarContainer.appendChild(calendarContent);
@@ -1443,14 +1830,12 @@ jSuites.calendar = (function(el, options) {
             e.stopPropagation();
         });
 
-        el.onmouseup = function() {
-            obj.open();
-        }
-
         if ('ontouchend' in document.documentElement === true) {
             calendar.addEventListener("touchend", mouseUpControls);
+            el.addEventListener("touchend", obj.open);
         } else {
             calendar.addEventListener("mouseup", mouseUpControls);
+            el.addEventListener("mouseup", obj.open);
         }
 
         // Global controls
@@ -1486,6 +1871,11 @@ jSuites.calendar = (function(el, options) {
         // Default opened
         if (obj.options.opened == true) {
             obj.open();
+        }
+
+        // Controls
+        if (obj.options.controls == false) {
+            calendarContainer.classList.add('jcalendar-hide-controls');
         }
 
         // Change method
@@ -1568,8 +1958,11 @@ jSuites.calendar.prettifyAll = function() {
         if (elements[i].getAttribute('data-date')) {
             elements[i].innerHTML = jSuites.calendar.prettify(elements[i].getAttribute('data-date'));
         } else {
-            elements[i].setAttribute('data-date', elements[i].innerHTML);
-            elements[i].innerHTML = jSuites.calendar.prettify(elements[i].innerHTML);
+            if (elements[i].innerHTML) {
+                elements[i].setAttribute('title', elements[i].innerHTML);
+                elements[i].setAttribute('data-date', elements[i].innerHTML);
+                elements[i].innerHTML = jSuites.calendar.prettify(elements[i].innerHTML);
+            }
         }
     }
 }
@@ -1622,101 +2015,77 @@ jSuites.calendar.toArray = function(value) {
 
 // Helper to extract date from a string
 jSuites.calendar.extractDateFromString = function(date, format) {
-    if (date > 0 && Number(date) == date) {
+    var o = jSuites.mask(date, { mask: format }, true);
+
+    // Check if in format Excel (Need difference with format date or type detected is numeric)
+    if (date > 0 && Number(date) == date && (o.values.join("") !== o.value || o.type == "numeric")) {
         var d = new Date(Math.round((date - 25569)*86400*1000));
         return d.getFullYear() + "-" + jSuites.two(d.getMonth()) + "-" + jSuites.two(d.getDate()) + ' 00:00:00';
     }
 
-    var v1 = '' + date;
-    var v2 = format.replace(/[0-9]/g,'');
+    var complete = false;
 
-    var test = 1;
-
-    // Get year
-    var y = v2.search("YYYY");
-    y = v1.substr(y,4);
-    if (parseInt(y) != y) {
-        test = 0;
+    if (o.values.length === o.tokens.length && o.values[o.values.length-1].length >= o.tokens[o.tokens.length-1].length) {
+        complete = true;
     }
 
-    // Get month
-    var m = v2.search("MM");
-    m = v1.substr(m,2);
-    if (parseInt(m) != m || m > 12) {
-        test = 0;
-    }
-
-    // Get day
-    var d = v2.search("DD");
-    if (d >= 0) {
-        d = v1.substr(d,2);
-        if (parseInt(d) != d  || d > 31) {
-            test = 0;
+    if (o.date[0] && o.date[1] && (o.date[2] || complete)) {
+        if (! o.date[2]) {
+            o.date[2] = 1;
         }
-    } else {
-        d = '01';
-    }
 
-    // Get hour
-    var h = v2.search("HH");
-    if (h >= 0) {
-        h = v1.substr(h,2);
-        if (! parseInt(h) || h > 23) {
-            h = '00';
-        }
-    } else {
-        h = '00';
-    }
-
-    // Get minutes
-    var i = v2.search("MI");
-    if (i >= 0) {
-        i = v1.substr(i,2);
-        if (! parseInt(i) || i > 59) {
-            i = '00';
-        }
-    } else {
-        i = '00';
-    }
-
-    // Get seconds
-    var s = v2.search("SS");
-    if (s >= 0) {
-        s = v1.substr(s,2);
-        if (! parseInt(s) || s > 59) {
-            s = '00';
-        }
-    } else {
-        s = '00';
-    }
-
-    if (test == 1 && date.length == v2.length) {
-        // Update source
-        return y + '-' + m + '-' + d + ' ' + h + ':' +  i + ':' + s;
+        return o.date[0] + '-' + jSuites.two(o.date[1]) + '-' + jSuites.two(o.date[2]) + ' ' + jSuites.two(o.date[3]) + ':' + jSuites.two(o.date[4])+ ':' + jSuites.two(o.date[5]);
     }
 
     return '';
 }
 
+var excelInitialTime = Date.UTC(1900, 0, 0);
+var excelLeapYearBug = Date.UTC(1900, 1, 29);
+var millisecondsPerDay = 86400000;
+
 /**
  * Date to number
  */
-jSuites.calendar.dateToNum = function(a, b) {
-    a = new Date(a);
-    if (! b) {
-        b = '1899-12-30 ' + a.getHours() + ':' + a.getMinutes() + ':' + a.getSeconds();
+jSuites.calendar.dateToNum = function(jsDate) {
+    if (typeof(jsDate) === 'string') {
+        jsDate = new Date(jsDate + '  GMT+0');
     }
-    b = new Date(b);
-    var v = a.getTime() - b.getTime();
-    return Math.round(v / 86400000);
+    var jsDateInMilliseconds = jsDate.getTime();
+
+    if (jsDateInMilliseconds >= excelLeapYearBug) {
+        jsDateInMilliseconds += millisecondsPerDay;
+    }
+
+    jsDateInMilliseconds -= excelInitialTime;
+
+    return jsDateInMilliseconds / millisecondsPerDay;
 }
 
 /**
  * Number to date
  */
-jSuites.calendar.numToDate = function(value) {
-    var d = new Date(Math.round((value - 25569)*86400*1000));
-    return d.getFullYear() + "-" + jSuites.two(d.getMonth()+1) + "-" + jSuites.two(d.getDate()) + ' 00:00:00';
+// !IMPORTANT!
+// Excel incorrectly considers 1900 to be a leap year
+jSuites.calendar.numToDate = function(excelSerialNumber) {
+    var jsDateInMilliseconds = excelInitialTime + excelSerialNumber * millisecondsPerDay;
+
+    if (jsDateInMilliseconds >= excelLeapYearBug) {
+        jsDateInMilliseconds -= millisecondsPerDay;
+    }
+
+    const d = new Date(jsDateInMilliseconds);
+
+    var date = [
+        d.getUTCFullYear(),
+        d.getUTCMonth()+1,
+        d.getUTCDate(),
+        d.getUTCHours(),
+        d.getUTCMinutes(),
+        d.getUTCSeconds(),
+    ];
+
+    return jSuites.calendar.now(date);
 }
 
 // Helper to convert date into string
@@ -1737,17 +2106,20 @@ jSuites.calendar.getDateString = function(value, options) {
     }
 
     // Convert to number of hours
-    if (typeof(value) == 'number' && format.indexOf('[h]') >= 0) {
-        var result = parseFloat(24 * Number(value));
-        if (format.indexOf('mm') >= 0) {
-            var h = (''+result).split('.');
-            if (h[1]) {
-                var d = 60 * parseFloat('0.' + h[1])
-                d = parseFloat(d.toFixed(2));
-            } else {
-                var d = 0;
+    if (format.indexOf('[h]') >= 0) {
+        var result = 0;
+        if (value && jSuites.isNumeric(value)) {
+            result = parseFloat(24 * Number(value));
+            if (format.indexOf('mm') >= 0) {
+                var h = (''+result).split('.');
+                if (h[1]) {
+                    var d = 60 * parseFloat('0.' + h[1])
+                    d = parseFloat(d.toFixed(2));
+                } else {
+                    var d = 0;
+                }
+                result = parseInt(h[0]) + ':' + jSuites.two(d);
             }
-            result = parseInt(h[0]) + ':' + jSuites.two(d);
         }
         return result;
     }
@@ -2003,6 +2375,10 @@ jSuites.color = (function(el, options) {
         // Value
         if (typeof obj.options.value === 'string') {
             el.value = obj.options.value;
+            if (el.tagName === 'INPUT') {
+                el.style.color = el.value;
+                el.style.backgroundColor = el.value;
+            }
         }
 
         // Placeholder
@@ -2017,6 +2393,21 @@ jSuites.color = (function(el, options) {
         return obj;
     }
 
+    obj.select = function(color) {
+        // Remove current selected mark
+        var selected = container.querySelector('.jcolor-selected');
+        if (selected) {
+            selected.classList.remove('jcolor-selected');
+        }
+
+        // Mark cell as selected
+        if (obj.values[color]) {
+            obj.values[color].classList.add('jcolor-selected');
+        }
+
+        obj.options.value = color;
+    }
+
     /**
      * Open color pallete
      */
@@ -2025,13 +2416,23 @@ jSuites.color = (function(el, options) {
             // Start tracking
             jSuites.tracking(obj, true);
 
-            // Show colorpicker
+            // Show color picker
             container.classList.add('jcolor-focus');
 
-            var rectContent = content.getBoundingClientRect();
+            // Select current color
+            if (obj.options.value) {
+                obj.select(obj.options.value);
+            }
 
-            if (jSuites.getWindowWidth() < 800 || obj.options.fullscreen == true) {
-                content.style.top = '';
+            // Reset margin
+            content.style.marginTop = '';
+            content.style.marginLeft = '';
+
+            var rectContent = content.getBoundingClientRect();
+            var availableWidth = jSuites.getWindowWidth();
+            var availableHeight = jSuites.getWindowHeight();
+
+            if (availableWidth < 800 || obj.options.fullscreen == true) {
                 content.classList.add('jcolor-fullscreen');
                 jSuites.animation.slideBottom(content, 1);
                 backdrop.style.display = 'block';
@@ -2041,24 +2442,20 @@ jSuites.color = (function(el, options) {
                     backdrop.style.display = '';
                 }
 
-                var rect = el.getBoundingClientRect();
-
                 if (obj.options.position) {
                     content.style.position = 'fixed';
-                    if (window.innerHeight < rect.bottom + rectContent.height) {
-                        content.style.top = (rect.top - (rectContent.height + 2)) + 'px';
-                    } else {
-                        content.style.top = (rect.top + rect.height + 2) + 'px';
-                    }
-                    content.style.left = rect.left + 'px';
                 } else {
-                    if (window.innerHeight < rect.bottom + rectContent.height) {
-                        content.style.top = -1 * (rectContent.height + rect.height + 2) + 'px';
-                    } else {
-                        content.style.top = '2px';
-                    }
+                    content.style.position = '';
+                }
+
+                if (rectContent.left + rectContent.width > availableWidth) {
+                    content.style.marginLeft = -1 * (rectContent.left + rectContent.width - (availableWidth - 20)) + 'px';
+                }
+                if (rectContent.top + rectContent.height > availableHeight) {
+                    content.style.marginTop = -1 * (rectContent.top + rectContent.height - (availableHeight - 20)) + 'px';
                 }
             }
+
 
             if (typeof(obj.options.onopen) == 'function') {
                 obj.options.onopen(el);
@@ -2111,15 +2508,7 @@ jSuites.color = (function(el, options) {
             slidersResult = color;
 
             // Remove current selecded mark
-            var selected = container.querySelector('.jcolor-selected');
-            if (selected) {
-                selected.classList.remove('jcolor-selected');
-            }
-
-            // Mark cell as selected
-            if (obj.values[color]) {
-                obj.values[color].classList.add('jcolor-selected');
-            }
+            obj.select(color);
 
             // Onchange
             if (typeof(obj.options.onchange) == 'function') {
@@ -2130,10 +2519,15 @@ jSuites.color = (function(el, options) {
             if (el.value != obj.options.value) {
                 // Set input value
                 el.value = obj.options.value;
+                if (el.tagName === 'INPUT') {
+                    el.style.color = el.value;
+                    el.style.backgroundColor = el.value;
+                }
+
                 // Element onchange native
-                if (typeof(el.onchange) == 'function') {
-                    el.onchange({
-                        type: 'change',
+                if (typeof(el.oninput) == 'function') {
+                    el.oninput({
+                        type: 'input',
                         target: el,
                         value: el.value
                     });
@@ -2215,16 +2609,6 @@ jSuites.color = (function(el, options) {
 
         // Append to the table
         tableContainer.appendChild(t);
-
-        // Select color
-        tableContainer.addEventListener("mousedown", function(e) {
-            if (e.target.tagName == 'TD') {
-                var value = e.target.getAttribute('data-value');
-                if (value) {
-                    obj.setValue(value);
-                }
-            }
-        });
 
         return tableContainer;
     }
@@ -2457,22 +2841,12 @@ jSuites.color = (function(el, options) {
         resetButton  = document.createElement('div');
         resetButton.className = 'jcolor-reset';
         resetButton.innerHTML = obj.options.resetLabel;
-        resetButton.onclick = function(e) {
-            obj.setValue('');
-            obj.close();
-        }
         controls.appendChild(resetButton);
 
         // Close button
         closeButton  = document.createElement('div');
         closeButton.className = 'jcolor-close';
         closeButton.innerHTML = obj.options.doneLabel;
-        closeButton.onclick = function(e) {
-            if (jsuitesTabs.getActive() > 0) {
-                obj.setValue(slidersResult);
-            }
-            obj.close();
-        }
         controls.appendChild(closeButton);
 
         // Element that will be used to create the tabs
@@ -2524,22 +2898,32 @@ jSuites.color = (function(el, options) {
             el.appendChild(container);
         }
 
+        container.addEventListener("click", function(e) {
+            if (e.target.tagName == 'TD') {
+                var value = e.target.getAttribute('data-value');
+                if (value) {
+                    obj.setValue(value);
+                }
+            } else if (e.target.classList.contains('jcolor-reset')) {
+                obj.setValue('');
+                obj.close();
+            } else if (e.target.classList.contains('jcolor-close')) {
+                if (jsuitesTabs.getActive() > 0) {
+                    obj.setValue(slidersResult);
+                }
+                obj.close();
+            } else if (e.target.classList.contains('jcolor-backdrop')) {
+                obj.close();
+            } else {
+                obj.open();
+            }
+        });
+
         /**
          * If element is focus open the picker
          */
         el.addEventListener("mouseup", function(e) {
             obj.open();
-        });
-
-        backdrop.addEventListener("mousedown", function(e) {
-            backdropClickControl = true;
-        });
-
-        backdrop.addEventListener("mouseup", function(e) {
-            if (backdropClickControl) {
-                obj.close();
-                backdropClickControl = false;
-            }
         });
 
         // If the picker is open on the spectrum tab, it changes the canvas size when the window size is changed
@@ -2573,6 +2957,24 @@ jSuites.color = (function(el, options) {
         container.color = obj;
     }
 
+    obj.toHex = function(rgb) {
+        var hex = function(x) {
+            return ("0" + parseInt(x).toString(16)).slice(-2);
+        }
+        if (rgb) {
+            if (/^#[0-9A-F]{6}$/i.test(rgb)) {
+                return rgb;
+            } else {
+                rgb = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+                if (rgb && rgb.length) {
+                    return "#" + hex(rgb[1]) + hex(rgb[2]) + hex(rgb[3]);
+                } else {
+                    return "";
+                }
+            }
+        }
+    }
+
     init();
 
     return obj;
@@ -2581,7 +2983,8 @@ jSuites.color = (function(el, options) {
 
 
 jSuites.contextmenu = (function(el, options) {
-    var obj = {};
+    // New instance
+    var obj = { type:'contextmenu'};
     obj.options = {};
 
     // Default configuration
@@ -2601,8 +3004,6 @@ jSuites.contextmenu = (function(el, options) {
 
     // Class definition
     el.classList.add('jcontextmenu');
-    // Focusable
-    el.setAttribute('tabindex', '900');
 
     /**
      * Open contextmenu
@@ -2615,18 +3016,34 @@ jSuites.contextmenu = (function(el, options) {
             obj.create(items);
         }
 
+        // Close current contextmenu
+        if (jSuites.contextmenu.current) {
+            jSuites.contextmenu.current.close();
+        }
+
+        // Add to the opened components monitor
+        jSuites.tracking(obj, true);
+
+        // Show context menu
+        el.classList.add('jcontextmenu-focus');
+
+        // Current
+        jSuites.contextmenu.current = obj;
+
         // Coordinates
         if ((obj.options.items && obj.options.items.length > 0) || el.children.length) {
             if (e.target) {
-                var x = e.clientX;
-                var y = e.clientY;
+                if (e.changedTouches && e.changedTouches[0]) {
+                    x = e.changedTouches[0].clientX;
+                    y = e.changedTouches[0].clientY;
+                } else {
+                    var x = e.clientX;
+                    var y = e.clientY;
+                }
             } else {
                 var x = e.x;
                 var y = e.y;
             }
-
-            el.classList.add('jcontextmenu-focus');
-            el.focus();
 
             var rect = el.getBoundingClientRect();
 
@@ -2652,6 +3069,10 @@ jSuites.contextmenu = (function(el, options) {
         }
     }
 
+    obj.isOpened = function() {
+        return el.classList.contains('jcontextmenu-focus') ? true : false;
+    }
+
     /**
      * Close menu
      */
@@ -2659,6 +3080,7 @@ jSuites.contextmenu = (function(el, options) {
         if (el.classList.contains('jcontextmenu-focus')) {
             el.classList.remove('jcontextmenu-focus');
         }
+        jSuites.tracking(obj, false);
     }
 
     /**
@@ -2669,13 +3091,47 @@ jSuites.contextmenu = (function(el, options) {
         // Update content
         el.innerHTML = '';
 
+        // Add header contextmenu
+        var itemHeader = createHeader();
+        el.appendChild(itemHeader);
+
         // Append items
         for (var i = 0; i < items.length; i++) {
             var itemContainer = createItemElement(items[i]);
             el.appendChild(itemContainer);
         }
     }
-    
+
+    /**
+     * createHeader for context menu
+     * @private
+     * @returns {HTMLElement}
+     */
+    function createHeader() {
+        var header = document.createElement('div');
+        header.classList.add("header");
+        header.addEventListener("click", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        var title = document.createElement('a');
+        title.classList.add("title");
+        title.innerHTML = jSuites.translate("Menu");
+
+        header.appendChild(title);
+
+        var closeButton = document.createElement('a');
+        closeButton.classList.add("close");
+        closeButton.innerHTML = jSuites.translate("close");
+        closeButton.addEventListener("click", function(e) {
+            obj.close();
+        });
+
+        header.appendChild(closeButton);
+
+        return header;
+    }
+
     /**
      * Private function for create a new Item element
      * @param {type} item
@@ -2708,9 +3164,9 @@ jSuites.contextmenu = (function(el, options) {
                 itemContainer.addEventListener("mousedown", function(e) {
                     e.preventDefault();
                 });
-                itemContainer.addEventListener("mouseup", function() {
+                itemContainer.addEventListener("mouseup", function(e) {
                     // Execute method
-                    this.method(this);
+                    this.method(this, e);
                 });
             }
             itemContainer.appendChild(itemText);
@@ -2725,7 +3181,7 @@ jSuites.contextmenu = (function(el, options) {
                 el_submenu.classList.add('jcontextmenu');
                 // Focusable
                 el_submenu.setAttribute('tabindex', '900');
-                
+
                 // Append items
                 var submenu = item.submenu;
                 for (var i = 0; i < submenu.length; i++) {
@@ -2754,53 +3210,15 @@ jSuites.contextmenu = (function(el, options) {
         obj.create(obj.options.items);
     }
 
-    el.addEventListener('blur', function(e) {
+    window.addEventListener("mousewheel", function() {
         obj.close();
     });
-
-    if (! jSuites.contextmenu.hasEvents) {
-        window.addEventListener("mousewheel", function() {
-            obj.close();
-        });
-
-        document.addEventListener("contextmenu", function(e) {
-            var id = jSuites.contextmenu.getElement(e.target);
-            if (id) {
-                var element = document.querySelector('#' + id);
-                if (! element) {
-                    console.error('JSUITES: Contextmenu id not found');
-                } else {
-                    element.contextmenu.open(e);
-                    e.preventDefault();
-                }
-            }
-        });
-
-        jSuites.contextmenu.hasEvents = true;
-    }
 
     el.contextmenu = obj;
 
     return obj;
 });
 
-jSuites.contextmenu.getElement = function(element) {
-    var foundId = 0;
-
-    function path (element) {
-        if (element.parentNode && element.getAttribute('aria-contextmenu-id')) {
-            foundId = element.getAttribute('aria-contextmenu-id')
-        } else {
-            if (element.parentNode) {
-                path(element.parentNode);
-            }
-        }
-    }
-
-    path(element);
-
-    return foundId;
-}
 
 jSuites.dropdown = (function(el, options) {
     // Already created, update options
@@ -2826,11 +3244,11 @@ jSuites.dropdown = (function(el, options) {
             }
 
             obj.setData(data);
+        }
 
-            // Onload method
-            if (typeof(obj.options.onload) == 'function') {
-                obj.options.onload(el, obj, data, val);
-            }
+        // Onload method
+        if (typeof(obj.options.onload) == 'function') {
+            obj.options.onload(el, obj, data, val);
         }
 
         // Set value
@@ -2874,9 +3292,9 @@ jSuites.dropdown = (function(el, options) {
             }
         }
         
-        if(typeof testA == "string" || typeof testB == "string") {
-            if(typeof testA != "string") { testA = ""+testA; }
-            if(typeof testB != "string") { testB = ""+testB; }
+        if (typeof testA == "string" || typeof testB == "string") {
+            if (typeof testA != "string") { testA = ""+testA; }
+            if (typeof testB != "string") { testB = ""+testB; }
             return testA.localeCompare(testB);
         } else {
             return testA - testB;
@@ -2900,6 +3318,8 @@ jSuites.dropdown = (function(el, options) {
         }
         // Reset options
         obj.options.value = '';
+        // Reset value
+        el.value = '';
     }
 
     /**
@@ -3179,7 +3599,7 @@ jSuites.dropdown = (function(el, options) {
 
         // Header
         obj.header = document.createElement('input');
-        obj.header.className = 'jdropdown-header';
+        obj.header.className = 'jdropdown-header jss_object';
         obj.header.type = 'text';
         obj.header.setAttribute('autocomplete', 'off');
         obj.header.onfocus = function() {
@@ -3605,8 +4025,20 @@ jSuites.dropdown = (function(el, options) {
     }
 
     obj.setData = function(data) {
+        // Reset current value
+        resetValue();
+
+        // Make sure the content container is blank
+        content.innerHTML = '';
+
+        // Reset
+        obj.header.value = '';
+
+        // Reset items and values
+        obj.items = [];
+
         // Prepare data
-        if (data.length) {
+        if (data && data.length) {
             for (var i = 0; i < data.length; i++) {
                 // Compatibility
                 if (typeof(data[i]) != 'object') {
@@ -3625,24 +4057,17 @@ jSuites.dropdown = (function(el, options) {
                 }
             }
 
-            // Reset current value
-            resetValue();
-
-            // Make sure the content container is blank
-            content.innerHTML = '';
-
-            // Reset
-            obj.header.value = '';
-
-            // Reset items and values
-            obj.items = [];
-
             // Append data
             obj.appendData(data);
 
             // Update data
             obj.options.data = data;
+        } else {
+            // Update data
+           obj.options.data = [];
         }
+
+        obj.close();
     }
 
     obj.getData = function() {
@@ -3693,21 +4118,21 @@ jSuites.dropdown = (function(el, options) {
      * Change event
      */
     var change = function(oldValue) {
-        // Events
-        if (typeof(obj.options.onchange) == 'function') {
-            obj.options.onchange(el, obj, oldValue, obj.options.value);
-        }
-
         // Lemonade JS
         if (el.value != obj.options.value) {
             el.value = obj.options.value;
-            if (typeof(el.onchange) == 'function') {
-                el.onchange({
-                    type: 'change',
+            if (typeof(el.oninput) == 'function') {
+                el.oninput({
+                    type: 'input',
                     target: el,
                     value: el.value
                 });
             }
+        }
+
+        // Events
+        if (typeof(obj.options.onchange) == 'function') {
+            obj.options.onchange(el, obj, oldValue, obj.options.value);
         }
     }
 
@@ -4557,34 +4982,35 @@ jSuites.dropdown.extractFromDom = function(el, options) {
 }
 
 jSuites.editor = (function(el, options) {
-    var obj = {};
+    // New instance
+    var obj = { type:'editor' };
     obj.options = {};
 
     // Default configuration
     var defaults = {
+        // Load data from a remove location
+        url: null,
         // Initial HTML content
-        value: null,
+        value: '',
         // Initial snippet
         snippet: null,
         // Add toolbar
-        toolbar: null,
+        toolbar: true,
+        toolbarOnTop: false,
         // Website parser is to read websites and images from cross domain
         remoteParser: null,
         // Placeholder
         placeholder: null,
         // Parse URL
-        parseURL: false,
         filterPaste: true,
         // Accept drop files
-        dropZone: false,
+        dropZone: true,
         dropAsSnippet: false,
-        acceptImages: false,
+        acceptImages: true,
         acceptFiles: false,
         maxFileSize: 5000000,
         allowImageResize: true,
         // Style
-        border: true,
-        padding: true,
         maxHeight: null,
         height: null,
         focus: false,
@@ -4596,6 +5022,8 @@ jSuites.editor = (function(el, options) {
         onkeyup: null,
         onkeydown: null,
         onchange: null,
+        extensions: null,
+        type: null,
     };
 
     // Loop through our object
@@ -4608,13 +5036,9 @@ jSuites.editor = (function(el, options) {
     }
 
     // Private controllers
-    var imageResize = 0;
     var editorTimer = null;
     var editorAction = null;
     var files = [];
-
-    // Make sure element is empty
-    el.innerHTML = '';
 
     // Keep the reference for the container
     obj.el = el;
@@ -4628,16 +5052,6 @@ jSuites.editor = (function(el, options) {
     // Prepare container
     el.classList.add('jeditor-container');
 
-    // Padding
-    if (obj.options.padding == true) {
-        el.classList.add('jeditor-padding');
-    }
-
-    // Border
-    if (obj.options.border == false) {
-        el.style.border = '0px';
-    }
-
     // Snippet
     var snippet = document.createElement('div');
     snippet.className = 'jsnippet';
@@ -4647,45 +5061,58 @@ jSuites.editor = (function(el, options) {
     var toolbar = document.createElement('div');
     toolbar.className = 'jeditor-toolbar';
 
-    // Create editor
-    var editor = document.createElement('div');
-    editor.setAttribute('contenteditable', true);
-    editor.setAttribute('spellcheck', false);
-    editor.className = 'jeditor';
+    obj.editor = document.createElement('div');
+    obj.editor.setAttribute('contenteditable', true);
+    obj.editor.setAttribute('spellcheck', false);
+    obj.editor.classList.add('jeditor');
 
     // Placeholder
     if (obj.options.placeholder) {
-        editor.setAttribute('data-placeholder', obj.options.placeholder);
+        obj.editor.setAttribute('data-placeholder', obj.options.placeholder);
     }
 
     // Max height
     if (obj.options.maxHeight || obj.options.height) {
-        editor.style.overflowY = 'auto';
+        obj.editor.style.overflowY = 'auto';
 
         if (obj.options.maxHeight) {
-            editor.style.maxHeight = obj.options.maxHeight;
+            obj.editor.style.maxHeight = obj.options.maxHeight;
         }
         if (obj.options.height) {
-            editor.style.height = obj.options.height;
+            obj.editor.style.height = obj.options.height;
         }
     }
 
     // Set editor initial value
-    if (obj.options.value) {
-        var value = obj.options.value;
+    if (obj.options.url) {
+        jSuites.ajax({
+            url: obj.options.url,
+            dataType: 'html',
+            success: function(result) {
+                obj.editor.innerHTML = result;
+
+                jSuites.editor.setCursor(obj.editor, obj.options.focus == 'initial' ? true : false);
+            }
+        })
     } else {
-        var value = el.innerHTML ? el.innerHTML : ''; 
+        if (obj.options.value) {
+            obj.editor.innerHTML = obj.options.value;
+        } else {
+            // Create from existing elements
+            for (var i = 0; i < el.children.length; i++) {
+                obj.editor.appendChild(el.children[i]);
+            }
+        }
     }
 
-    if (! value) {
-        var value = '';
-    }
+    // Make sure element is empty
+    el.innerHTML = '';
 
     /**
      * Onchange event controllers
      */
     var change = function(e) {
-        if (typeof(obj.options.onchange) == 'function') { 
+        if (typeof(obj.options.onchange) == 'function') {
             obj.options.onchange(el, obj, e);
         }
 
@@ -4695,9 +5122,9 @@ jSuites.editor = (function(el, options) {
         // Lemonade JS
         if (el.value != obj.options.value) {
             el.value = obj.options.value;
-            if (typeof(el.onchange) == 'function') {
-                el.onchange({
-                    type: 'change',
+            if (typeof(el.oninput) == 'function') {
+                el.oninput({
+                    type: 'input',
                     target: el,
                     value: el.value
                 });
@@ -4735,10 +5162,10 @@ jSuites.editor = (function(el, options) {
                 range = sel.getRangeAt(0);
                 var selectedText = range.toString();
                 range.deleteContents();
-                range.insertNode(newNode); 
+                range.insertNode(newNode);
                 // move the cursor after element
                 range.setStartAfter(newNode);
-                range.setEndAfter(newNode); 
+                range.setEndAfter(newNode);
                 sel.removeAllRanges();
                 sel.addRange(range);
             }
@@ -4770,7 +5197,7 @@ jSuites.editor = (function(el, options) {
      */
     var appendImage = function(image) {
         if (! snippet.innerHTML) {
-            appendElement({});
+            obj.appendSnippet({});
         }
         snippet.children[0].appendChild(image);
         updateTotalImages();
@@ -4780,7 +5207,7 @@ jSuites.editor = (function(el, options) {
      * Append snippet
      * @Param object data
      */
-    var appendElement = function(data) {
+    obj.appendSnippet = function(data) {
         // Reset snippet
         snippet.innerHTML = '';
 
@@ -4808,96 +5235,22 @@ jSuites.editor = (function(el, options) {
             }
         }
 
-        editor.appendChild(document.createElement('br'));
-        editor.appendChild(snippet);
-    }
-
-    var verifyEditor = function() {
-        clearTimeout(editorTimer);
-        editorTimer = setTimeout(function() {
-            var snippet = editor.querySelector('.jsnippet');
-            if (! snippet) {
-                var html = editor.innerHTML.replace(/\n/g, ' ');
-                var container = document.createElement('div');
-                container.innerHTML = html;
-                var text = container.innerText; 
-                var url = jSuites.editor.detectUrl(text);
-
-                if (url) {
-                    if (url[0].substr(-3) == 'jpg' || url[0].substr(-3) == 'png' || url[0].substr(-3) == 'gif') {
-                         obj.addImage(url[0], true);
-                    } else {
-                        var id = jSuites.editor.youtubeParser(url[0]);
-                        obj.parseWebsite(url[0], id);
-                    }
-                }
-            }
-        }, 1000);
-    }
-
-    obj.parseContent = function() {
-        verifyEditor();
-    }
-
-    obj.parseWebsite = function(url, youtubeId) {
-        if (! obj.options.remoteParser) {
-            console.log('The remoteParser is not defined');
-        } else {
-            // Youtube definitions
-            if (youtubeId) {
-                var url = 'https://www.youtube.com/watch?v=' + youtubeId;
-            }
-
-            var p = {
-                title: '',
-                description: '',
-                image: '',
-                host: url.split('/')[2],
-                url: url,
-            }
-
-            jSuites.ajax({
-                url: obj.options.remoteParser + encodeURI(url.trim()),
-                method: 'GET',
-                dataType: 'json',
-                success: function(result) {
-                    // Get title
-                    if (result.title) {
-                        p.title = result.title;
-                    }
-                    // Description
-                    if (result.description) {
-                        p.description = result.description;
-                    }
-                    // Host
-                    if (result.host) {
-                        p.host = result.host;
-                    }
-                    // Url
-                    if (result.url) {
-                        p.url = result.url;
-                    }
-                    // Append snippet
-                    appendElement(p);
-                    // Add image
-                    if (result.image) {
-                        obj.addImage(result.image, true);
-                    } else if (result['og:image']) {
-                        obj.addImage(result['og:image'], true);
-                    }
-                }
-            });
-        }
+        obj.editor.appendChild(document.createElement('br'));
+        obj.editor.appendChild(snippet);
     }
 
     /**
      * Set editor value
      */
-    obj.setData = function(html) {
-        editor.innerHTML = html;
+    obj.setData = function(o) {
+        if (typeof(o) == 'object') {
+            obj.editor.innerHTML = o.content;
+        } else {
+            obj.editor.innerHTML = o;
+        }
 
         if (obj.options.focus) {
-            jSuites.editor.setCursor(editor, true);
+            jSuites.editor.setCursor(obj.editor, true);
         }
 
         // Reset files container
@@ -4905,7 +5258,7 @@ jSuites.editor = (function(el, options) {
     }
 
     obj.getFiles = function() {
-        var f = editor.querySelectorAll('.jfile');
+        var f = obj.editor.querySelectorAll('.jfile');
         var d = [];
         for (var i = 0; i < f.length; i++) {
             if (files[f[i].src]) {
@@ -4916,7 +5269,7 @@ jSuites.editor = (function(el, options) {
     }
 
     obj.getText = function() {
-        return editor.innerText;
+        return obj.editor.innerText;
     }
 
     /**
@@ -4924,7 +5277,7 @@ jSuites.editor = (function(el, options) {
      */
     obj.getData = function(json) {
         if (! json) {
-            var data = editor.innerHTML;
+            var data = obj.editor.innerHTML;
         } else {
             var data = {
                 content : '',
@@ -4963,11 +5316,21 @@ jSuites.editor = (function(el, options) {
             }
 
             // Get content
-            var text = editor.innerHTML;
+            var d = document.createElement('div');
+            d.innerHTML = obj.editor.innerHTML;
+            var s = d.querySelector('.jsnippet');
+            if (s) {
+                s.remove();
+            }
+
+            var text = d.innerHTML;
             text = text.replace(/<br>/g, "\n");
             text = text.replace(/<\/div>/g, "<\/div>\n");
             text = text.replace(/<(?:.|\n)*?>/gm, "");
             data.content = text.trim();
+
+            // Process extensions
+            processExtensions('getData', data);
         }
 
         return data;
@@ -4975,7 +5338,7 @@ jSuites.editor = (function(el, options) {
 
     // Reset
     obj.reset = function() {
-        editor.innerHTML = '';
+        obj.editor.innerHTML = '';
         snippet.innerHTML = '';
         files = [];
     }
@@ -5004,7 +5367,8 @@ jSuites.editor = (function(el, options) {
                     content: data.result,
                 }
 
-                insertNodeAtCaret(newImage);
+                //insertNodeAtCaret(newImage);
+                document.execCommand('insertHtml', false, newImage.outerHTML);
             });
         }
     }
@@ -5043,6 +5407,8 @@ jSuites.editor = (function(el, options) {
                     newImage.src = window.URL.createObjectURL(blob);
                     newImage.classList.add('jfile');
                     newImage.setAttribute('tabindex', '900');
+                    newImage.setAttribute('width', img.width);
+                    newImage.setAttribute('height', img.height);
                     files[newImage.src] = {
                         file: newImage.src,
                         extension: extension,
@@ -5054,7 +5420,8 @@ jSuites.editor = (function(el, options) {
                         // Just to understand the attachment is part of a snippet
                         files[newImage.src].snippet = true;
                     } else {
-                        insertNodeAtCaret(newImage);
+                        //insertNodeAtCaret(newImage);
+                        document.execCommand('insertHtml', false, newImage.outerHTML);
                     }
 
                     change();
@@ -5112,181 +5479,41 @@ jSuites.editor = (function(el, options) {
 
     // Destroy
     obj.destroy = function() {
-        editor.removeEventListener('mouseup', editorMouseUp);
-        editor.removeEventListener('mousedown', editorMouseDown);
-        editor.removeEventListener('mousemove', editorMouseMove);
-        editor.removeEventListener('keyup', editorKeyUp);
-        editor.removeEventListener('keydown', editorKeyDown);
-        editor.removeEventListener('dragstart', editorDragStart);
-        editor.removeEventListener('dragenter', editorDragEnter);
-        editor.removeEventListener('dragover', editorDragOver);
-        editor.removeEventListener('drop', editorDrop);
-        editor.removeEventListener('paste', editorPaste);
-
-        if (typeof(obj.options.onblur) == 'function') {
-            editor.removeEventListener('blur', editorBlur);
-        }
-        if (typeof(obj.options.onfocus) == 'function') {
-            editor.removeEventListener('focus', editorFocus);
-        }
+        obj.editor.removeEventListener('mouseup', editorMouseUp);
+        obj.editor.removeEventListener('mousedown', editorMouseDown);
+        obj.editor.removeEventListener('mousemove', editorMouseMove);
+        obj.editor.removeEventListener('keyup', editorKeyUp);
+        obj.editor.removeEventListener('keydown', editorKeyDown);
+        obj.editor.removeEventListener('dragstart', editorDragStart);
+        obj.editor.removeEventListener('dragenter', editorDragEnter);
+        obj.editor.removeEventListener('dragover', editorDragOver);
+        obj.editor.removeEventListener('drop', editorDrop);
+        obj.editor.removeEventListener('paste', editorPaste);
+        obj.editor.removeEventListener('blur', editorBlur);
+        obj.editor.removeEventListener('focus', editorFocus);
 
         el.editor = null;
         el.classList.remove('jeditor-container');
 
         toolbar.remove();
         snippet.remove();
-        editor.remove();
+        obj.editor.remove();
     }
 
-    var isLetter = function (str) {
-        var regex = /([\u0041-\u005A\u0061-\u007A\u00AA\u00B5\u00BA\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02C1\u02C6-\u02D1\u02E0-\u02E4\u02EC\u02EE\u0370-\u0374\u0376\u0377\u037A-\u037D\u0386\u0388-\u038A\u038C\u038E-\u03A1\u03A3-\u03F5\u03F7-\u0481\u048A-\u0527\u0531-\u0556\u0559\u0561-\u0587\u05D0-\u05EA\u05F0-\u05F2\u0620-\u064A\u066E\u066F\u0671-\u06D3\u06D5\u06E5\u06E6\u06EE\u06EF\u06FA-\u06FC\u06FF\u0710\u0712-\u072F\u074D-\u07A5\u07B1\u07CA-\u07EA\u07F4\u07F5\u07FA\u0800-\u0815\u081A\u0824\u0828\u0840-\u0858\u08A0\u08A2-\u08AC\u0904-\u0939\u093D\u0950\u0958-\u0961\u0971-\u0977\u0979-\u097F\u0985-\u098C\u098F\u0990\u0993-\u09A8\u09AA-\u09B0\u09B2\u09B6-\u09B9\u09BD\u09CE\u09DC\u09DD\u09DF-\u09E1\u09F0\u09F1\u0A05-\u0A0A\u0A0F\u0A10\u0A13-\u0A28\u0A2A-\u0A30\u0A32\u0A33\u0A35\u0A36\u0A38\u0A39\u0A59-\u0A5C\u0A5E\u0A72-\u0A74\u0A85-\u0A8D\u0A8F-\u0A91\u0A93-\u0AA8\u0AAA-\u0AB0\u0AB2\u0AB3\u0AB5-\u0AB9\u0ABD\u0AD0\u0AE0\u0AE1\u0B05-\u0B0C\u0B0F\u0B10\u0B13-\u0B28\u0B2A-\u0B30\u0B32\u0B33\u0B35-\u0B39\u0B3D\u0B5C\u0B5D\u0B5F-\u0B61\u0B71\u0B83\u0B85-\u0B8A\u0B8E-\u0B90\u0B92-\u0B95\u0B99\u0B9A\u0B9C\u0B9E\u0B9F\u0BA3\u0BA4\u0BA8-\u0BAA\u0BAE-\u0BB9\u0BD0\u0C05-\u0C0C\u0C0E-\u0C10\u0C12-\u0C28\u0C2A-\u0C33\u0C35-\u0C39\u0C3D\u0C58\u0C59\u0C60\u0C61\u0C85-\u0C8C\u0C8E-\u0C90\u0C92-\u0CA8\u0CAA-\u0CB3\u0CB5-\u0CB9\u0CBD\u0CDE\u0CE0\u0CE1\u0CF1\u0CF2\u0D05-\u0D0C\u0D0E-\u0D10\u0D12-\u0D3A\u0D3D\u0D4E\u0D60\u0D61\u0D7A-\u0D7F\u0D85-\u0D96\u0D9A-\u0DB1\u0DB3-\u0DBB\u0DBD\u0DC0-\u0DC6\u0E01-\u0E30\u0E32\u0E33\u0E40-\u0E46\u0E81\u0E82\u0E84\u0E87\u0E88\u0E8A\u0E8D\u0E94-\u0E97\u0E99-\u0E9F\u0EA1-\u0EA3\u0EA5\u0EA7\u0EAA\u0EAB\u0EAD-\u0EB0\u0EB2\u0EB3\u0EBD\u0EC0-\u0EC4\u0EC6\u0EDC-\u0EDF\u0F00\u0F40-\u0F47\u0F49-\u0F6C\u0F88-\u0F8C\u1000-\u102A\u103F\u1050-\u1055\u105A-\u105D\u1061\u1065\u1066\u106E-\u1070\u1075-\u1081\u108E\u10A0-\u10C5\u10C7\u10CD\u10D0-\u10FA\u10FC-\u1248\u124A-\u124D\u1250-\u1256\u1258\u125A-\u125D\u1260-\u1288\u128A-\u128D\u1290-\u12B0\u12B2-\u12B5\u12B8-\u12BE\u12C0\u12C2-\u12C5\u12C8-\u12D6\u12D8-\u1310\u1312-\u1315\u1318-\u135A\u1380-\u138F\u13A0-\u13F4\u1401-\u166C\u166F-\u167F\u1681-\u169A\u16A0-\u16EA\u1700-\u170C\u170E-\u1711\u1720-\u1731\u1740-\u1751\u1760-\u176C\u176E-\u1770\u1780-\u17B3\u17D7\u17DC\u1820-\u1877\u1880-\u18A8\u18AA\u18B0-\u18F5\u1900-\u191C\u1950-\u196D\u1970-\u1974\u1980-\u19AB\u19C1-\u19C7\u1A00-\u1A16\u1A20-\u1A54\u1AA7\u1B05-\u1B33\u1B45-\u1B4B\u1B83-\u1BA0\u1BAE\u1BAF\u1BBA-\u1BE5\u1C00-\u1C23\u1C4D-\u1C4F\u1C5A-\u1C7D\u1CE9-\u1CEC\u1CEE-\u1CF1\u1CF5\u1CF6\u1D00-\u1DBF\u1E00-\u1F15\u1F18-\u1F1D\u1F20-\u1F45\u1F48-\u1F4D\u1F50-\u1F57\u1F59\u1F5B\u1F5D\u1F5F-\u1F7D\u1F80-\u1FB4\u1FB6-\u1FBC\u1FBE\u1FC2-\u1FC4\u1FC6-\u1FCC\u1FD0-\u1FD3\u1FD6-\u1FDB\u1FE0-\u1FEC\u1FF2-\u1FF4\u1FF6-\u1FFC\u2071\u207F\u2090-\u209C\u2102\u2107\u210A-\u2113\u2115\u2119-\u211D\u2124\u2126\u2128\u212A-\u212D\u212F-\u2139\u213C-\u213F\u2145-\u2149\u214E\u2183\u2184\u2C00-\u2C2E\u2C30-\u2C5E\u2C60-\u2CE4\u2CEB-\u2CEE\u2CF2\u2CF3\u2D00-\u2D25\u2D27\u2D2D\u2D30-\u2D67\u2D6F\u2D80-\u2D96\u2DA0-\u2DA6\u2DA8-\u2DAE\u2DB0-\u2DB6\u2DB8-\u2DBE\u2DC0-\u2DC6\u2DC8-\u2DCE\u2DD0-\u2DD6\u2DD8-\u2DDE\u2E2F\u3005\u3006\u3031-\u3035\u303B\u303C\u3041-\u3096\u309D-\u309F\u30A1-\u30FA\u30FC-\u30FF\u3105-\u312D\u3131-\u318E\u31A0-\u31BA\u31F0-\u31FF\u3400-\u4DB5\u4E00-\u9FCC\uA000-\uA48C\uA4D0-\uA4FD\uA500-\uA60C\uA610-\uA61F\uA62A\uA62B\uA640-\uA66E\uA67F-\uA697\uA6A0-\uA6E5\uA717-\uA71F\uA722-\uA788\uA78B-\uA78E\uA790-\uA793\uA7A0-\uA7AA\uA7F8-\uA801\uA803-\uA805\uA807-\uA80A\uA80C-\uA822\uA840-\uA873\uA882-\uA8B3\uA8F2-\uA8F7\uA8FB\uA90A-\uA925\uA930-\uA946\uA960-\uA97C\uA984-\uA9B2\uA9CF\uAA00-\uAA28\uAA40-\uAA42\uAA44-\uAA4B\uAA60-\uAA76\uAA7A\uAA80-\uAAAF\uAAB1\uAAB5\uAAB6\uAAB9-\uAABD\uAAC0\uAAC2\uAADB-\uAADD\uAAE0-\uAAEA\uAAF2-\uAAF4\uAB01-\uAB06\uAB09-\uAB0E\uAB11-\uAB16\uAB20-\uAB26\uAB28-\uAB2E\uABC0-\uABE2\uAC00-\uD7A3\uD7B0-\uD7C6\uD7CB-\uD7FB\uF900-\uFA6D\uFA70-\uFAD9\uFB00-\uFB06\uFB13-\uFB17\uFB1D\uFB1F-\uFB28\uFB2A-\uFB36\uFB38-\uFB3C\uFB3E\uFB40\uFB41\uFB43\uFB44\uFB46-\uFBB1\uFBD3-\uFD3D\uFD50-\uFD8F\uFD92-\uFDC7\uFDF0-\uFDFB\uFE70-\uFE74\uFE76-\uFEFC\uFF21-\uFF3A\uFF41-\uFF5A\uFF66-\uFFBE\uFFC2-\uFFC7\uFFCA-\uFFCF\uFFD2-\uFFD7\uFFDA-\uFFDC]+)/g;
-        return str.match(regex) ? 1 : 0;
-    }
-
-    // Event handlers
-    var editorMouseUp = function(e) {
-        if (editorAction && editorAction.e) {
-            editorAction.e.classList.remove('resizing');
-        }
-
-        editorAction = false;
-    }
-
-    var editorMouseDown = function(e) {
-        var close = function(snippet) {
-            var rect = snippet.getBoundingClientRect();
-            if (rect.width - (e.clientX - rect.left) < 40 && e.clientY - rect.top < 40) {
-                snippet.innerHTML = '';
-                snippet.remove();
-            }
-        }
-
-        if (e.target.tagName == 'IMG') {
-            if (e.target.style.cursor) {
-                var rect = e.target.getBoundingClientRect();
-                editorAction = {
-                    e: e.target,
-                    x: e.clientX,
-                    y: e.clientY,
-                    w: rect.width,
-                    h: rect.height,
-                    d: e.target.style.cursor,
-                }
-
-                if (! e.target.width) {
-                    e.target.width = rect.width + 'px';
-                }
-
-                if (! e.target.height) {
-                    e.target.height = rect.height + 'px';
-                }
-
-                var s = window.getSelection();
-                if (s.rangeCount) {
-                    for (var i = 0; i < s.rangeCount; i++) {
-                        s.removeRange(s.getRangeAt(i));
-                    }
-                }
-
-                e.target.classList.add('resizing');
-            } else {
-                editorAction = true;
-            }
-        } else { 
-            if (e.target.classList.contains('jsnippet')) {
-                close(e.target);
-            } else if (e.target.parentNode.classList.contains('jsnippet')) {
-                close(e.target.parentNode);
-            }
-
-            editorAction = true;
-        }
-    }
-
-    var editorMouseMove = function(e) {
-        if (e.target.tagName == 'IMG' && ! e.target.parentNode.classList.contains('jsnippet-image') && obj.options.allowImageResize == true) {
-            if (e.target.getAttribute('tabindex')) {
-                var rect = e.target.getBoundingClientRect();
-                if (e.clientY - rect.top < 5) {
-                    if (rect.width - (e.clientX - rect.left) < 5) {
-                        e.target.style.cursor = 'ne-resize';
-                    } else if (e.clientX - rect.left < 5) {
-                        e.target.style.cursor = 'nw-resize';
-                    } else {
-                        e.target.style.cursor = 'n-resize';
-                    }
-                } else if (rect.height - (e.clientY - rect.top) < 5) {
-                    if (rect.width - (e.clientX - rect.left) < 5) {
-                        e.target.style.cursor = 'se-resize';
-                    } else if (e.clientX - rect.left < 5) {
-                        e.target.style.cursor = 'sw-resize';
-                    } else {
-                        e.target.style.cursor = 's-resize';
-                    }
-                } else if (rect.width - (e.clientX - rect.left) < 5) {
-                    e.target.style.cursor = 'e-resize';
-                } else if (e.clientX - rect.left < 5) {
-                    e.target.style.cursor = 'w-resize';
-                } else {
-                    e.target.style.cursor = '';
-                }
-            }
-        }
-
-        // Move
-        if (e.which == 1 && editorAction && editorAction.d) {
-            if (editorAction.d == 'e-resize' || editorAction.d == 'ne-resize' ||  editorAction.d == 'se-resize') {
-                editorAction.e.width = (editorAction.w + (e.clientX - editorAction.x));
-
-                if (e.shiftKey) {
-                    var newHeight = (e.clientX - editorAction.x) * (editorAction.h / editorAction.w);
-                    editorAction.e.height = editorAction.h + newHeight;
-                } else {
-                    var newHeight =  null;
-                }
-            }
-
-            if (! newHeight) {
-                if (editorAction.d == 's-resize' || editorAction.d == 'se-resize' || editorAction.d == 'sw-resize') {
-                    if (! e.shiftKey) {
-                        editorAction.e.height = editorAction.h + (e.clientY - editorAction.y);
-                    }
-                }
-            }
-        }
-    }
-
-    var editorKeyUp = function(e) {
-        if (! editor.innerHTML) {
-            editor.innerHTML = '<div><br></div>';
-        }
-
-        if (typeof(obj.options.onkeyup) == 'function') { 
-            obj.options.onkeyup(el, obj, e);
-        }
-    }
-
-
-    var editorKeyDown = function(e) {
-        // Check for URL
-        if (obj.options.parseURL == true) {
-            verifyEditor();
-        }
-
-        if (typeof(obj.options.onkeydown) == 'function') { 
-            obj.options.onkeydown(el, obj, e);
-        }
-
-        if (e.key == 'Delete') {
-            if (e.target.tagName == 'IMG' && e.target.parentNode.classList.contains('jsnippet-image')) {
-                e.target.remove();
-                updateTotalImages();
-            }
-        }
+    obj.upload = function() {
+        jSuites.click(obj.file);
     }
 
     // Elements to be removed
-    var remove = [HTMLUnknownElement,HTMLAudioElement,HTMLEmbedElement,HTMLIFrameElement,HTMLTextAreaElement,HTMLInputElement,HTMLScriptElement];
+    var remove = [
+        HTMLUnknownElement,
+        HTMLAudioElement,
+        HTMLEmbedElement,
+        HTMLIFrameElement,
+        HTMLTextAreaElement,
+        HTMLInputElement,
+        HTMLScriptElement
+    ];
 
     // Valid properties
     var validProperty = ['width', 'height', 'align', 'border', 'src', 'tabindex'];
@@ -5355,6 +5582,13 @@ jSuites.editor = (function(el, options) {
        }
     }
 
+    var select = function(e) {
+        var s = window.getSelection()
+        var r = document.createRange();
+        r.selectNode(e);
+        s.addRange(r)
+    }
+
     var filter = function(data) {
         if (data) {
             data = data.replace(new RegExp('<!--(.*?)-->', 'gsi'), '');
@@ -5365,7 +5599,7 @@ jSuites.editor = (function(el, options) {
         var span = document.createElement('span');
         span.innerHTML = d.firstChild.innerHTML;
         return span;
-    } 
+    }
 
     var editorPaste = function(e) {
         if (obj.options.filterPaste == true) {
@@ -5389,7 +5623,7 @@ jSuites.editor = (function(el, options) {
                         html.map(function(v) {
                             var d = document.createElement('div');
                             d.innerText = v;
-                            editor.appendChild(d);
+                            obj.editor.appendChild(d);
                         });
                     } else {
                         html = html.map(function(v) {
@@ -5400,7 +5634,8 @@ jSuites.editor = (function(el, options) {
                 } else {
                     var d = filter(html);
                     // Paste to the editor
-                    insertNodeAtCaret(d);
+                    //insertNodeAtCaret(d);
+                    document.execCommand('insertHtml', false, d.innerHTML);
                 }
             }
 
@@ -5458,7 +5693,7 @@ jSuites.editor = (function(el, options) {
             var html = (e.originalEvent || e).dataTransfer.getData('text/html');
             var text = (e.originalEvent || e).dataTransfer.getData('text/plain');
             var file = (e.originalEvent || e).dataTransfer.files;
-    
+
             if (file.length) {
                 obj.addFile(file);
             } else if (text) {
@@ -5471,12 +5706,14 @@ jSuites.editor = (function(el, options) {
     }
 
     var editorBlur = function(e) {
+        // Process extensions
+        processExtensions('onevent', e);
+        // Apply changes
+        change(e);
         // Blur
         if (typeof(obj.options.onblur) == 'function') {
             obj.options.onblur(el, obj, e);
         }
-
-        change(e);
     }
 
     var editorFocus = function(e) {
@@ -5486,55 +5723,260 @@ jSuites.editor = (function(el, options) {
         }
     }
 
-    editor.addEventListener('mouseup', editorMouseUp);
-    editor.addEventListener('mousedown', editorMouseDown);
-    editor.addEventListener('mousemove', editorMouseMove);
-    editor.addEventListener('keyup', editorKeyUp);
-    editor.addEventListener('keydown', editorKeyDown);
-    editor.addEventListener('dragstart', editorDragStart);
-    editor.addEventListener('dragenter', editorDragEnter);
-    editor.addEventListener('dragover', editorDragOver);
-    editor.addEventListener('drop', editorDrop);
-    editor.addEventListener('paste', editorPaste);
-    editor.addEventListener('focus', editorFocus);
-    editor.addEventListener('blur', editorBlur);
-
-    // Onload
-    if (typeof(obj.options.onload) == 'function') {
-        obj.options.onload(el, obj, editor);
+    var editorKeyUp = function(e) {
+        if (! obj.editor.innerHTML) {
+            obj.editor.innerHTML = '<div><br></div>';
+        }
+        if (typeof(obj.options.onkeyup) == 'function') {
+            obj.options.onkeyup(el, obj, e);
+        }
     }
 
-    // Set value to the editor
-    editor.innerHTML = value;
+    var editorKeyDown = function(e) {
+        // Process extensions
+        processExtensions('onevent', e);
 
-    // Append editor to the containre
-    el.appendChild(editor);
+        if (e.key == 'Delete') {
+            if (e.target.tagName == 'IMG') {
+                var parent = e.target.parentNode;
+                select(e.target);
+                if (parent.classList.contains('jsnippet-image')) {
+                    updateTotalImages();
+                }
+            }
+        }
 
+        if (typeof(obj.options.onkeydown) == 'function') {
+            obj.options.onkeydown(el, obj, e);
+        }
+    }
+
+    var editorMouseUp = function(e) {
+        if (editorAction && editorAction.e) {
+            editorAction.e.classList.remove('resizing');
+
+            if (editorAction.e.changed == true) {
+                var image = editorAction.e.cloneNode()
+                image.width = parseInt(editorAction.e.style.width) || editorAction.e.getAttribute('width');
+                image.height = parseInt(editorAction.e.style.height) || editorAction.e.getAttribute('height');
+                editorAction.e.style.width = '';
+                editorAction.e.style.height = '';
+                select(editorAction.e);
+                document.execCommand('insertHtml', false, image.outerHTML);
+            }
+        }
+
+        editorAction = false;
+    }
+
+    var editorMouseDown = function(e) {
+        var close = function(snippet) {
+            var rect = snippet.getBoundingClientRect();
+            if (rect.width - (e.clientX - rect.left) < 40 && e.clientY - rect.top < 40) {
+                snippet.innerHTML = '';
+                snippet.remove();
+            }
+        }
+
+        if (e.target.tagName == 'IMG') {
+            if (e.target.style.cursor) {
+                var rect = e.target.getBoundingClientRect();
+                editorAction = {
+                    e: e.target,
+                    x: e.clientX,
+                    y: e.clientY,
+                    w: rect.width,
+                    h: rect.height,
+                    d: e.target.style.cursor,
+                }
+
+                if (! e.target.getAttribute('width')) {
+                    e.target.setAttribute('width', rect.width)
+                }
+
+                if (! e.target.getAttribute('height')) {
+                    e.target.setAttribute('height', rect.height)
+                }
+
+                var s = window.getSelection();
+                if (s.rangeCount) {
+                    for (var i = 0; i < s.rangeCount; i++) {
+                        s.removeRange(s.getRangeAt(i));
+                    }
+                }
+
+                e.target.classList.add('resizing');
+            } else {
+                editorAction = true;
+            }
+        } else {
+            if (e.target.classList.contains('jsnippet')) {
+                close(e.target);
+            } else if (e.target.parentNode.classList.contains('jsnippet')) {
+                close(e.target.parentNode);
+            }
+
+            editorAction = true;
+        }
+    }
+
+    var editorMouseMove = function(e) {
+        if (e.target.tagName == 'IMG' && ! e.target.parentNode.classList.contains('jsnippet-image') && obj.options.allowImageResize == true) {
+            if (e.target.getAttribute('tabindex')) {
+                var rect = e.target.getBoundingClientRect();
+                if (e.clientY - rect.top < 5) {
+                    if (rect.width - (e.clientX - rect.left) < 5) {
+                        e.target.style.cursor = 'ne-resize';
+                    } else if (e.clientX - rect.left < 5) {
+                        e.target.style.cursor = 'nw-resize';
+                    } else {
+                        e.target.style.cursor = 'n-resize';
+                    }
+                } else if (rect.height - (e.clientY - rect.top) < 5) {
+                    if (rect.width - (e.clientX - rect.left) < 5) {
+                        e.target.style.cursor = 'se-resize';
+                    } else if (e.clientX - rect.left < 5) {
+                        e.target.style.cursor = 'sw-resize';
+                    } else {
+                        e.target.style.cursor = 's-resize';
+                    }
+                } else if (rect.width - (e.clientX - rect.left) < 5) {
+                    e.target.style.cursor = 'e-resize';
+                } else if (e.clientX - rect.left < 5) {
+                    e.target.style.cursor = 'w-resize';
+                } else {
+                    e.target.style.cursor = '';
+                }
+            }
+        }
+
+        // Move
+        if (e.which == 1 && editorAction && editorAction.d) {
+            if (editorAction.d == 'e-resize' || editorAction.d == 'ne-resize' ||  editorAction.d == 'se-resize') {
+                editorAction.e.style.width = (editorAction.w + (e.clientX - editorAction.x));
+
+                if (e.shiftKey) {
+                    var newHeight = (e.clientX - editorAction.x) * (editorAction.h / editorAction.w);
+                    editorAction.e.style.height = editorAction.h + newHeight;
+                } else {
+                    var newHeight =  null;
+                }
+            }
+
+            if (! newHeight) {
+                if (editorAction.d == 's-resize' || editorAction.d == 'se-resize' || editorAction.d == 'sw-resize') {
+                    if (! e.shiftKey) {
+                        editorAction.e.style.height = editorAction.h + (e.clientY - editorAction.y);
+                    }
+                }
+            }
+
+            editorAction.e.changed = true;
+        }
+    }
+
+    var processExtensions = function(method, data) {
+        if (obj.options.extensions) {
+            var ext = Object.keys(obj.options.extensions);
+            if (ext.length) {
+                for (var i = 0; i < ext.length; i++)
+                    if (obj.options.extensions[ext[i]] && typeof(obj.options.extensions[ext[i]][method]) == 'function') {
+                        obj.options.extensions[ext[i]][method].call(obj, data);
+                    }
+            }
+        }
+    }
+
+    var loadExtensions = function() {
+        if (obj.options.extensions) {
+            var ext = Object.keys(obj.options.extensions);
+            if (ext.length) {
+                for (var i = 0; i < ext.length; i++) {
+                    if (obj.options.extensions[ext[i]] && typeof (obj.options.extensions[ext[i]]) == 'function') {
+                        obj.options.extensions[ext[i]] = obj.options.extensions[ext[i]](el, obj);
+                    }
+                }
+            }
+        }
+    }
+
+    document.addEventListener('mouseup', editorMouseUp);
+    document.addEventListener('mousemove', editorMouseMove);
+    obj.editor.addEventListener('mousedown', editorMouseDown);
+    obj.editor.addEventListener('keyup', editorKeyUp);
+    obj.editor.addEventListener('keydown', editorKeyDown);
+    obj.editor.addEventListener('dragstart', editorDragStart);
+    obj.editor.addEventListener('dragenter', editorDragEnter);
+    obj.editor.addEventListener('dragover', editorDragOver);
+    obj.editor.addEventListener('drop', editorDrop);
+    obj.editor.addEventListener('paste', editorPaste);
+    obj.editor.addEventListener('focus', editorFocus);
+    obj.editor.addEventListener('blur', editorBlur);
+
+    // Append editor to the container
+    el.appendChild(obj.editor);
     // Snippet
     if (obj.options.snippet) {
-        appendElement(obj.options.snippet);
-    }
-
-    // Default toolbar
-    if (obj.options.toolbar == null) {
-        obj.options.toolbar = jSuites.editor.getDefaultToolbar();
+        obj.appendSnippet(obj.options.snippet);
     }
 
     // Add toolbar
     if (obj.options.toolbar) {
-        // Append to the DOM
-        el.appendChild(toolbar);
+        // Default toolbar configuration
+        if (Array.isArray(obj.options.toolbar)) {
+            var toolbarOptions = {
+                container: true,
+                responsive: true,
+                items: obj.options.toolbar
+            }
+        } else if (obj.options.toolbar === true) {
+            var toolbarOptions = {
+                container: true,
+                responsive: true,
+                items: [],
+            }
+        } else {
+            var toolbarOptions = obj.options.toolbar;
+        }
+
+        // Default items
+        if (! (toolbarOptions.items && toolbarOptions.items.length)) {
+            toolbarOptions.items = jSuites.editor.getDefaultToolbar(obj);
+        }
+
+        if (obj.options.toolbarOnTop) {
+            // Add class
+            el.classList.add('toolbar-on-top');
+            // Append to the DOM
+            el.insertBefore(toolbar, el.firstChild);
+        } else {
+            // Add padding to the editor
+            obj.editor.style.padding = '15px';
+            // Append to the DOM
+            el.appendChild(toolbar);
+        }
+
         // Create toolbar
-        jSuites.toolbar(toolbar, {
-            container: true,
-            responsive: true,
-            items: obj.options.toolbar
-        });
+        jSuites.toolbar(toolbar, toolbarOptions);
+
+        toolbar.addEventListener('click', function() {
+            obj.editor.focus();
+        })
     }
 
+    // Upload file
+    obj.file = document.createElement('input');
+    obj.file.style.display = 'none';
+    obj.file.type = 'file';
+    obj.file.setAttribute('accept', 'image/*');
+    obj.file.onchange = function() {
+        obj.addFile(this.files);
+    }
+    el.appendChild(obj.file);
+
     // Focus to the editor
-    if (obj.options.focus) {
-        jSuites.editor.setCursor(editor, obj.options.focus == 'initial' ? true : false);
+    if (obj.editor.innerHTML && obj.options.focus) {
+        jSuites.editor.setCursor(obj.editor, obj.options.focus == 'initial' ? true : false);
     }
 
     // Change method
@@ -5551,7 +5993,14 @@ jSuites.editor = (function(el, options) {
         }
     }
 
+    loadExtensions();
+
     el.editor = obj;
+
+    // Onload
+    if (typeof(obj.options.onload) == 'function') {
+        obj.options.onload(el, obj, obj.editor);
+    }
 
     return obj;
 });
@@ -5574,219 +6023,278 @@ jSuites.editor.setCursor = function(element, first) {
     sel.addRange(range);
 }
 
-jSuites.editor.getDomain = function(url) {
-    return url.replace('http://','').replace('https://','').replace('www.','').split(/[/?#]/)[0].split(/:/g)[0];
-}
+jSuites.editor.getDefaultToolbar = function(obj) {
 
-jSuites.editor.detectUrl = function(text) {
-    var expression = /(((https?:\/\/)|(www\.))[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|]+)/ig;
-    var links = text.match(expression);
-
-    if (links) {
-        if (links[0].substr(0,3) == 'www') {
-            links[0] = 'http://' + links[0];
+    var color = function(a,b,c) {
+        if (! c.color) {
+            var t = null;
+            var colorPicker = jSuites.color(c, {
+                onchange: function(o, v) {
+                    if (c.k === 'color') {
+                        document.execCommand('foreColor', false, v);
+                    } else {
+                        document.execCommand('backColor', false, v);
+                    }
+                }
+            });
+            c.color.open();
         }
     }
 
-    return links;
-}
+    var items = [];
 
-jSuites.editor.youtubeParser = function(url) {
-    var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#\&\?]*).*/;
-    var match = url.match(regExp);
+    items.push({
+        content: 'undo',
+        onclick: function() {
+            document.execCommand('undo');
+        }
+    });
 
-    return (match && match[7].length == 11) ? match[7] : false;
-}
+    items.push({
+        content: 'redo',
+        onclick: function() {
+            document.execCommand('redo');
+        }
+    });
 
-jSuites.editor.getDefaultToolbar = function() { 
-    return [
-        {
-            content: 'undo',
-            onclick: function() {
-                document.execCommand('undo');
+    items.push({
+        type: 'divisor'
+    });
+
+    if (obj.options.toolbarOnTop) {
+        items.push({
+            type: 'select',
+            width: '140px',
+            options: ['Default', 'Verdana', 'Arial', 'Courier New'],
+            render: function (e) {
+                return '<span style="font-family:' + e + '">' + e + '</span>';
+            },
+            onchange: function (a,b,c,d,e) {
+                document.execCommand("fontName", false, d);
             }
-        },
-        {
-            content: 'redo',
-            onclick: function() {
-                document.execCommand('redo');
-            }
-        },
-        {
-            type:'divisor'
-        },
-        {
-            content: 'format_bold',
-            onclick: function(a,b,c) {
-                document.execCommand('bold');
+        });
 
-                if (document.queryCommandState("bold")) {
-                    c.classList.add('selected');
-                } else {
-                    c.classList.remove('selected');
-                }
+        items.push({
+            type: 'select',
+            content: 'format_size',
+            options: ['x-small', 'small', 'medium', 'large', 'x-large'],
+            render: function (e) {
+                return '<span style="font-size:' + e + '">' + e + '</span>';
+            },
+            onchange: function (a,b,c,d,e) {
+                //var html = `<span style="font-size: ${c}">${text}</span>`;
+                //document.execCommand('insertHtml', false, html);
+                document.execCommand("fontSize", false, parseInt(e)+1);
+                //var f = window.getSelection().anchorNode.parentNode
+                //f.removeAttribute("size");
+                //f.style.fontSize = d;
             }
-        },
-        {
-            content: 'format_italic',
-            onclick: function(a,b,c) {
-                document.execCommand('italic');
+        });
 
-                if (document.queryCommandState("italic")) {
-                    c.classList.add('selected');
-                } else {
-                    c.classList.remove('selected');
-                }
+        items.push({
+            type: 'select',
+            options: ['format_align_left', 'format_align_center', 'format_align_right', 'format_align_justify'],
+            render: function (e) {
+                return '<i class="material-icons">' + e + '</i>';
+            },
+            onchange: function (a,b,c,d,e) {
+                var options = ['JustifyLeft','justifyCenter','justifyRight','justifyFull'];
+                document.execCommand(options[e]);
             }
-        },
-        {
-            content: 'format_underline',
-            onclick: function(a,b,c) {
-                document.execCommand('underline');
+        });
 
-                if (document.queryCommandState("underline")) {
-                    c.classList.add('selected');
-                } else {
-                    c.classList.remove('selected');
-                }
-            }
-        },
-        {
-            type:'divisor'
-        },
-        {
-            content: 'format_list_bulleted',
-            onclick: function(a,b,c) {
-                document.execCommand('insertUnorderedList');
+        items.push({
+            type: 'divisor'
+        });
 
-                if (document.queryCommandState("insertUnorderedList")) {
-                    c.classList.add('selected');
-                } else {
-                    c.classList.remove('selected');
-                }
-            }
-        },
-        {
-            content: 'format_list_numbered',
-            onclick: function(a,b,c) {
-                document.execCommand('insertOrderedList');
+        items.push({
+            content: 'format_color_text',
+            k: 'color',
+            onclick: color,
+        });
 
-                if (document.queryCommandState("insertOrderedList")) {
-                    c.classList.add('selected');
-                } else {
-                    c.classList.remove('selected');
-                }
-            }
-        },
-        {
-            content: 'format_indent_increase',
-            onclick: function(a,b,c) {
-                document.execCommand('indent', true, null);
+        items.push({
+            content: 'format_color_fill',
+            k: 'background-color',
+            onclick: color,
+        });
+    }
 
-                if (document.queryCommandState("indent")) {
-                    c.classList.add('selected');
-                } else {
-                    c.classList.remove('selected');
-                }
-            }
-        },
-        {
-            content: 'format_indent_decrease',
-            onclick: function() {
-                document.execCommand('outdent');
+    items.push({
+        content: 'format_bold',
+        onclick: function(a,b,c) {
+            document.execCommand('bold');
 
-                if (document.queryCommandState("outdent")) {
-                    this.classList.add('selected');
-                } else {
-                    this.classList.remove('selected');
-                }
-            }
-        }/*,
-        {
-            icon: ['format_align_left', 'format_align_right', 'format_align_center'],
-            onclick: function() {
-                document.execCommand('justifyCenter');
-
-                if (document.queryCommandState("justifyCenter")) {
-                    this.classList.add('selected');
-                } else {
-                    this.classList.remove('selected');
-                }
+            if (document.queryCommandState("bold")) {
+                c.classList.add('selected');
+            } else {
+                c.classList.remove('selected');
             }
         }
-        {
-            type:'select',
-            items: ['Verdana','Arial','Courier New'],
-            onchange: function() {
-            }
-        },
-        {
-            type:'select',
-            items: ['10px','12px','14px','16px','18px','20px','22px'],
-            onchange: function() {
-            }
-        },
-        {
-            icon:'format_align_left',
-            onclick: function() {
-                document.execCommand('JustifyLeft');
+    });
 
-                if (document.queryCommandState("JustifyLeft")) {
-                    this.classList.add('selected');
-                } else {
-                    this.classList.remove('selected');
-                }
-            }
-        },
-        {
-            icon:'format_align_center',
-            onclick: function() {
-                document.execCommand('justifyCenter');
+    items.push({
+        content: 'format_italic',
+        onclick: function(a,b,c) {
+            document.execCommand('italic');
 
-                if (document.queryCommandState("justifyCenter")) {
-                    this.classList.add('selected');
-                } else {
-                    this.classList.remove('selected');
-                }
+            if (document.queryCommandState("italic")) {
+                c.classList.add('selected');
+            } else {
+                c.classList.remove('selected');
             }
-        },
-        {
-            icon:'format_align_right',
-            onclick: function() {
-                document.execCommand('justifyRight');
+        }
+    });
 
-                if (document.queryCommandState("justifyRight")) {
-                    this.classList.add('selected');
-                } else {
-                    this.classList.remove('selected');
-                }
-            }
-        },
-        {
-            icon:'format_align_justify',
-            onclick: function() {
-                document.execCommand('justifyFull');
+    items.push({
+        content: 'format_underline',
+        onclick: function(a,b,c) {
+            document.execCommand('underline');
 
-                if (document.queryCommandState("justifyFull")) {
-                    this.classList.add('selected');
-                } else {
-                    this.classList.remove('selected');
-                }
+            if (document.queryCommandState("underline")) {
+                c.classList.add('selected');
+            } else {
+                c.classList.remove('selected');
             }
-        },
-        {
-            icon:'format_list_bulleted',
-            onclick: function() {
-                document.execCommand('insertUnorderedList');
+        }
+    });
 
-                if (document.queryCommandState("insertUnorderedList")) {
-                    this.classList.add('selected');
-                } else {
-                    this.classList.remove('selected');
-                }
+    items.push({
+        type:'divisor'
+    });
+
+    items.push({
+        content: 'format_list_bulleted',
+        onclick: function(a,b,c) {
+            document.execCommand('insertUnorderedList');
+
+            if (document.queryCommandState("insertUnorderedList")) {
+                c.classList.add('selected');
+            } else {
+                c.classList.remove('selected');
             }
-        }*/
-    ];
+        }
+    });
+
+    items.push({
+        content: 'format_list_numbered',
+        onclick: function(a,b,c) {
+            document.execCommand('insertOrderedList');
+
+            if (document.queryCommandState("insertOrderedList")) {
+                c.classList.add('selected');
+            } else {
+                c.classList.remove('selected');
+            }
+        }
+    });
+
+    items.push({
+        content: 'format_indent_increase',
+        onclick: function(a,b,c) {
+            document.execCommand('indent', true, null);
+
+            if (document.queryCommandState("indent")) {
+                c.classList.add('selected');
+            } else {
+                c.classList.remove('selected');
+            }
+        }
+    });
+
+    items.push({
+        content: 'format_indent_decrease',
+        onclick: function() {
+            document.execCommand('outdent');
+
+            if (document.queryCommandState("outdent")) {
+                this.classList.add('selected');
+            } else {
+                this.classList.remove('selected');
+            }
+        }
+    });
+
+    if (obj.options.toolbarOnTop) {
+        items.push({
+            type: 'divisor'
+        });
+
+        items.push({
+            content: 'photo',
+            onclick: function () {
+                obj.upload();
+            }
+        });
+
+        items.push({
+            type: 'select',
+            content: 'table_view',
+            columns: 10,
+            right: true,
+            options: [
+                '0x0', '1x0', '2x0', '3x0', '4x0', '5x0', '6x0', '7x0', '8x0', '9x0',
+                '0x1', '1x1', '2x1', '3x1', '4x1', '5x1', '6x1', '7x1', '8x1', '9x1',
+                '0x2', '1x2', '2x2', '3x2', '4x2', '5x2', '6x2', '7x2', '8x2', '9x2',
+                '0x3', '1x3', '2x3', '3x3', '4x3', '5x3', '6x3', '7x3', '8x3', '9x3',
+                '0x4', '1x4', '2x4', '3x4', '4x4', '5x4', '6x4', '7x4', '8x4', '9x4',
+                '0x5', '1x5', '2x5', '3x5', '4x5', '5x5', '6x5', '7x5', '8x5', '9x5',
+                '0x6', '1x6', '2x6', '3x6', '4x6', '5x6', '6x6', '7x6', '8x6', '9x6',
+                '0x7', '1x7', '2x7', '3x7', '4x7', '5x7', '6x7', '7x7', '8x7', '9x7',
+                '0x8', '1x8', '2x8', '3x8', '4x8', '5x8', '6x8', '7x8', '8x8', '9x8',
+                '0x9', '1x9', '2x9', '3x9', '4x9', '5x9', '6x9', '7x9', '8x9', '9x9',
+            ],
+            render: function (e, item) {
+                if (item) {
+                    item.onmouseover = this.onmouseover;
+                    e = e.split('x');
+                    item.setAttribute('data-x', e[0]);
+                    item.setAttribute('data-y', e[1]);
+                }
+                var element = document.createElement('div');
+                item.style.margin = '1px';
+                item.style.border = '1px solid #ddd';
+                return element;
+            },
+            onmouseover: function (e) {
+                var x = parseInt(e.target.getAttribute('data-x'));
+                var y = parseInt(e.target.getAttribute('data-y'));
+                for (var i = 0; i < e.target.parentNode.children.length; i++) {
+                    var element = e.target.parentNode.children[i];
+                    var ex = parseInt(element.getAttribute('data-x'));
+                    var ey = parseInt(element.getAttribute('data-y'));
+                    if (ex <= x && ey <= y) {
+                        element.style.backgroundColor = '#cae1fc';
+                        element.style.borderColor = '#2977ff';
+                    } else {
+                        element.style.backgroundColor = '';
+                        element.style.borderColor = '#ddd';
+                    }
+                }
+            },
+            onchange: function (a, b, c) {
+                c = c.split('x');
+                var table = document.createElement('table');
+                var tbody = document.createElement('tbody');
+                for (var y = 0; y <= c[1]; y++) {
+                    var tr = document.createElement('tr');
+                    for (var x = 0; x <= c[0]; x++) {
+                        var td = document.createElement('td');
+                        td.innerHTML = '';
+                        tr.appendChild(td);
+                    }
+                    tbody.appendChild(tr);
+                }
+                table.appendChild(tbody);
+                table.setAttribute('width', '100%');
+                table.setAttribute('cellpadding', '6');
+                table.setAttribute('cellspacing', '0');
+                document.execCommand('insertHTML', false, table.outerHTML);
+            }
+        });
+    }
+
+    return items;
 }
 
 
@@ -5890,7 +6398,7 @@ jSuites.form = (function(el, options) {
                 var data = obj.options.onbeforesave(el, data);
 
                 if (data === false) {
-                    return; 
+                    return;
                 }
             }
 
@@ -6128,6 +6636,8 @@ jSuites.form.getValue = function(element) {
         if (element.checked == true) {
             value = element.value;
         }
+    } else if (element.type == 'file') {
+        value = element.files;
     } else if (element.tagName == 'select' && element.multiple == true) {
         value = [];
         var options = element.querySelectorAll("options[selected]");
@@ -6185,6 +6695,8 @@ jSuites.form.setElements = function(el, data) {
             if (value !== null) {
                 if (type == 'checkbox' || type == 'radio') {
                     elements[i].checked = value ? true : false;
+                } else if (type == 'file') {
+                    // Do nothing
                 } else {
                     if (typeof (elements[i].val) == 'function') {
                         elements[i].val(value);
@@ -6214,6 +6726,9 @@ jSuites.focus = function(el) {
 }
 
 jSuites.isNumeric = (function (num) {
+    if (typeof(num) === 'string') {
+        num = num.trim();
+    }
     return !isNaN(num) && num !== null && num !== '';
 });
 
@@ -6620,10 +7135,6 @@ jSuites.sha512 = (function(str) {
     return binb2hex(binarray);
 });
 
-if (! jSuites.login) {
-    jSuites.login = {};
-    jSuites.login.sha512 = jSuites.sha512;
-}
 
 jSuites.image = jSuites.upload = (function(el, options) {
     var obj = {};
@@ -6993,12 +7504,19 @@ jSuites.loading = (function() {
 
     var loading = null;
 
-    obj.show = function() {
+    obj.show = function(timeout) {
         if (! loading) {
             loading = document.createElement('div');
             loading.className = 'jloading';
         }
         document.body.appendChild(loading);
+
+        // Max timeout in seconds
+        if (timeout > 0) {
+            setTimeout(function() {
+                obj.hide();
+            }, timeout * 1000)
+        }
     }
 
     obj.hide = function() {
@@ -7013,6 +7531,8 @@ jSuites.loading = (function() {
 jSuites.mask = (function() {
     // Currency 
     var tokens = {
+        // Text
+        text: [ '@' ],
         // Currency tokens
         currency: [ '#(.{1})##0?(.{1}0+)?( ?;(.*)?)?', '#' ],
         // Percentage
@@ -7020,7 +7540,7 @@ jSuites.mask = (function() {
         // Number
         numeric: [ '0{1}(.{1}0+)?' ],
         // Data tokens
-        datetime: [ 'YYYY', 'YYY', 'YY', 'MMMMM', 'MMMM', 'MMM', 'MM', 'DDDDD', 'DDDD', 'DDD', 'DD', 'DY', 'DAY', 'WD', 'D', 'Q', 'HH24', 'HH12', 'HH', '\\[H\\]', 'H', 'AM/PM', 'PM', 'AM', 'MI', 'SS', 'MS', 'MONTH', 'MON', 'Y', 'M' ],
+        datetime: [ 'YYYY', 'YYY', 'YY', 'MMMMM', 'MMMM', 'MMM', 'MM', 'DDDDD', 'DDDD', 'DDD', 'DD', 'DY', 'DAY', 'WD', 'D', 'Q', 'MONTH', 'MON', 'HH24', 'HH12', 'HH', '\\[H\\]', 'H', 'AM/PM', 'PM', 'AM', 'MI', 'SS', 'MS', 'Y', 'M' ],
         // Other
         general: [ 'A', '0', '[0-9a-zA-Z\$]+', '.']
     }
@@ -7048,6 +7568,34 @@ jSuites.mask = (function() {
 
         return v;
     }
+
+    var extractDate = function() {
+         var v = '';
+         if (! (this.date[0] && this.date[1] && this.date[2]) && (this.date[3] || this.date[4])) {
+             if (this.mask.toLowerCase().indexOf('[h]') !== -1) {
+                 v = parseInt(this.date[3]);
+             } else {
+                 v = parseInt(this.date[3]) % 24;
+             }
+             if (this.date[4]) {
+                 v += parseFloat(this.date[4] / 60);
+             }
+             v /= 24;
+         } else if (this.date[0] || this.date[1] || this.date[2] || this.date[3] || this.date[4] || this.date[5]) {
+             if (this.date[0] && this.date[1] && ! this.date[2]) {
+                 this.date[2] = 1;
+             }
+             var t = jSuites.calendar.now(this.date);
+             v = jSuites.calendar.dateToNum(t);
+             if (this.date[4]) {
+                 v += parseFloat(this.date[4] / 60);
+             }
+         }
+        if (isNaN(v)) {
+            v = '';
+        }
+         return v;
+     }
 
     var isBlank = function(v) {
         return v === null || v === '' || v === undefined ? true : false;
@@ -7086,11 +7634,16 @@ jSuites.mask = (function() {
                         return t[1];
                     } else {
                         // Did not find any decimal last resort the default
-                        var e = new RegExp('#,##', 'ig');
-                        if ((v && v.match(e)) || '1.1'.toLocaleString().substring(1,2) == '.') {
-                            this.options.decimal = '.';
+                        var e = new RegExp('#{1}(.{1})#+', 'ig');
+                        var t = e.exec(v);
+                        if (t && t[1] && t[1].length == 1) {
+                            if (t[1] === ',') {
+                                this.options.decimal = '.';
+                            } else {
+                                this.options.decimal = ',';
+                            }
                         } else {
-                            this.options.decimal = ',';
+                            this.options.decimal = '1.1'.toLocaleString().substring(1,2);
                         }
                     }
                 }
@@ -7116,13 +7669,31 @@ jSuites.mask = (function() {
 
         // New value
         v = (''+v).split(decimal);
-        v[0] = v[0].match(/[\-0-9]+/g, '');
-        if (v[0]) {
-            v[0] = v[0].join('');
+
+        // Signal
+        var signal = v[0].match(/[-]+/g);
+        if (signal && signal.length) {
+            signal = true;
+        } else {
+            signal = false;
         }
+
+        v[0] = v[0].match(/[0-9]+/g);
+
+        if (v[0]) {
+            if (signal) {
+                v[0].unshift('-');
+            }
+            v[0] = v[0].join('');
+        } else {
+            if (signal) {
+                v[0] = '-';
+            }
+        }
+
         if (v[0] || v[1]) {
             if (v[1] !== undefined) {
-                v[1] = v[1].match(/[0-9]+/g, '');
+                v[1] = v[1].match(/[0-9]+/g);
                 if (v[1]) {
                     v[1] = v[1].join('');
                 } else {
@@ -7132,21 +7703,17 @@ jSuites.mask = (function() {
         } else {
             return '';
         }
-
         return v;
     }
 
-    var FormatValue = function(v) {
+    var FormatValue = function(v, event) {
         if (v == '') {
             return '';
         }
         // Get decimal
         var d = getDecimal.call(this);
         // Convert value
-        var o = Object.create(this.options || {});
-        if (! o.minimumFractionDigits) {
-            o.minimumFractionDigits = 1;
-        }
+        var o = this.options;
         // Parse value
         v = ParseValue.call(this, v);
         if (v == '') {
@@ -7154,19 +7721,27 @@ jSuites.mask = (function() {
         }
         // Temporary value
         if (v[0]) {
-            var t = parseFloat(v.join('.'));
+            var t = parseFloat(v[0] + '.1');
             if (o.style == 'percent') {
                 t /= 100;
             }
         } else {
             var t = null;
         }
+
+        if ((v[0] == '-' || v[0] == '-00') && ! v[1] && (event && event.inputType == "deleteContentBackward")) {
+            return '';
+        }
+
         var n = new Intl.NumberFormat(this.locale, o).format(t);
         n = n.split(d);
-        var s = n[1].replace(/[0-9]*/g, '');
-        if (s) {
-            n[2] = s;
+        if (typeof(n[1]) !== 'undefined') {
+            var s = n[1].replace(/[0-9]*/g, '');
+            if (s) {
+                n[2] = s;
+            }
         }
+
         if (v[1] !== undefined) {
             n[1] = d + v[1];
         } else {
@@ -7176,7 +7751,7 @@ jSuites.mask = (function() {
         return n.join('');
     }
 
-    var Format = function(e) {
+    var Format = function(e, event) {
         var v = Value.call(e);
         if (! v) {
             return;
@@ -7184,7 +7759,7 @@ jSuites.mask = (function() {
 
         // Get decimal
         var d = getDecimal.call(this);
-        var n = FormatValue.call(this, v);
+        var n = FormatValue.call(this, v, event);
         var t = (n.length) - v.length;
         var index = Caret.call(e) + t;
         // Set value and update caret
@@ -7195,6 +7770,10 @@ jSuites.mask = (function() {
         // Keep the raw value
         var current = ParseValue.call(this, v);
         if (current) {
+            // Negative values
+            if (current[0] === '-') {
+                current[0] = '-0';
+            }
             return parseFloat(current.join('.'));
         }
         return null;
@@ -7229,7 +7808,7 @@ jSuites.mask = (function() {
             if (adjustNumeric) {
                 var p = null;
                 for (var i = 0; i < n.length; i++) {
-                    if (n[i].match(/[\-0-9]/g) || n[i] == '.' || n[i] == ',') {  
+                    if (n[i].match(/[\-0-9]/g) || n[i] == '.' || n[i] == ',') {
                         p = i;
                     }
                 }
@@ -7254,9 +7833,12 @@ jSuites.mask = (function() {
                 if (this.tagName == 'DIV') {
                     var s = window.getSelection();
                     var r = document.createRange();
-                    r.setStart(this.childNodes[0], index);
-                    s.removeAllRanges();
-                    s.addRange(r);
+
+                    if (this.childNodes[0]) {
+                        r.setStart(this.childNodes[0], index);
+                        s.removeAllRanges();
+                        s.addRange(r);
+                    }
                 } else {
                     this.selectionStart = index;
                     this.selectionEnd = index;
@@ -7271,7 +7853,11 @@ jSuites.mask = (function() {
     var Value = function(v, updateCaret, adjustNumeric) {
         if (this.tagName == 'DIV') {
             if (v === undefined) {
-                return this.innerText;
+                var v = this.innerText;
+                if (this.value && this.value.length > v.length) {
+                    v = this.value;
+                }
+                return v;
             } else {
                 if (this.innerText !== v) {
                     this.innerText = v;
@@ -7338,6 +7924,10 @@ jSuites.mask = (function() {
             if (isBlank(this.values[this.index])) {
                 this.values[this.index] = '';
             }
+            if (this.event && this.event.inputType && this.event.inputType.indexOf('delete') > -1) {
+                this.values[this.index] += v;
+                return;
+            }
             var pos = 0;
             var count = 0;
             var value = (this.values[this.index] + v).toLowerCase();
@@ -7350,9 +7940,12 @@ jSuites.mask = (function() {
             if (count > 1) {
                 this.values[this.index] += v;
             } else if (count == 1) {
+                // Jump number of chars
+                var t = (a[pos].length - this.values[this.index].length) - 1;
+                this.position += t;
+
                 this.values[this.index] = a[pos];
                 this.index++;
-
                 return pos;
             }
         },
@@ -7362,11 +7955,17 @@ jSuites.mask = (function() {
                 this.date[1] = ret + 1;
             }
         },
+        'MON': function(v) {
+            parser['MMM'].call(this, v);
+        },
         'MMMM': function(v) {
             var ret = parser.FIND.call(this, v, monthsFull);
             if (ret !== undefined) {
                 this.date[1] = ret + 1;
             }
+        },
+        'MONTH': function(v) {
+            parser['MMMM'].call(this, v);
         },
         'MMMMM': function(v) {
             if (isBlank(this.values[this.index])) {
@@ -7499,8 +8098,14 @@ jSuites.mask = (function() {
         'DDD': function(v) {
             parser.FIND.call(this, v, weekDays);
         },
+        'DY': function(v) {
+            parser['DDD'].call(this, v);
+        },
         'DDDD': function(v) {
             parser.FIND.call(this, v, weekDaysFull);
+        },
+        'DAY': function(v) {
+            parser['DDDD'].call(this, v);
         },
         'HH12': function(v, two) {
             if (isBlank(this.values[this.index])) {
@@ -7630,7 +8235,14 @@ jSuites.mask = (function() {
             }
             // New entry
             if (parseInt(v) >= 0 && parseInt(v) < 10) {
-                if (this.values[this.index] != '0' || v == decimal) {
+                // Replace the zero for a number
+                if (this.values[this.index] == '0' && v > 0) {
+                    this.values[this.index] = '';
+                } else if (this.values[this.index] == '-0' && v > 0) {
+                    this.values[this.index] = '-';
+                }
+                // Don't add up zeros because does not mean anything here
+                if ((this.values[this.index] != '0' && this.values[this.index] != '-0') || v == decimal) {
                     this.values[this.index] += v;
                 }
             } else if (decimal && v == decimal) {
@@ -7744,6 +8356,12 @@ jSuites.mask = (function() {
         },
         '.': function(v) {
             parser['[0-9a-zA-Z$]+'].call(this, v);
+        },
+        '@': function(v) {
+            if (isBlank(this.values[this.index])) {
+                this.values[this.index] = '';
+            }
+            this.values[this.index] += v;
         }
     }
 
@@ -7754,7 +8372,7 @@ jSuites.mask = (function() {
         if (this.type == 'general') {
             var t = [].concat(tokens.general);
         } else {
-            var t = [].concat(tokens.currency, tokens.datetime, tokens.percentage, tokens.numeric, tokens.general);
+            var t = [].concat(tokens.currency, tokens.datetime, tokens.percentage, tokens.numeric, tokens.text, tokens.general);
         }
         // Expression to extract all tokens from the string
         var e = new RegExp(t.join('|'), 'gi');
@@ -7768,6 +8386,8 @@ jSuites.mask = (function() {
     var getMethod = function(str) {
         if (! this.type) {
             var types = Object.keys(tokens);
+        } else if (this.type == 'text') {
+            var types = [ 'text' ];
         } else if (this.type == 'general') {
             var types = [ 'general' ];
         } else if (this.type == 'datetime') {
@@ -7983,22 +8603,29 @@ jSuites.mask = (function() {
 
         // Mask detected start the process
         if (! isFormula(o.value) && (o.mask || o.locale)) {
-            // Compatibility ixes
+            // Compatibility fixes
             if (o.mask) {
-                // Legacy
-                o.mask = o.mask.replace('[-]', '');
+                // Remove []
+                o.mask = o.mask.replace(new RegExp(/\[h]/),'|h|');
+                o.mask = o.mask.replace(new RegExp(/\[.*?\]/),'');
+                o.mask = o.mask.replace(new RegExp(/\|h\|/),'[h]');
+                if (o.mask.indexOf(';') !== -1) {
+                    var t = o.mask.split(';');
+                    o.mask = t[0];
+                }
                 // Excel mask TODO: Improve
-                if (o.mask.indexOf('##')) {
+                if (o.mask.indexOf('##') !== -1) {
                     var d = o.mask.split(';');
                     if (d[0]) {
-                        d[0] = d[0].replace('*', '');
-                        d[0] = d[0].replace(/_/g, '');
-                        d[0] = d[0].replace(/-/g, '');
-                        d[0] = d[0].replace('(','');
-                        d[0] = d[0].replace(')','');
+                        d[0] = d[0].replace('*', '\t');
+                        d[0] = d[0].replace(new RegExp(/_-/g), ' ');
+                        d[0] = d[0].replace(new RegExp(/_/g), '');
                         d[0] = d[0].replace('##0.###','##0.000');
                         d[0] = d[0].replace('##0.##','##0.00');
                         d[0] = d[0].replace('##0.#','##0.0');
+                        d[0] = d[0].replace('##0,###','##0,000');
+                        d[0] = d[0].replace('##0,##','##0,00');
+                        d[0] = d[0].replace('##0,#','##0,0');
                     }
                     o.mask = d[0];
                 }
@@ -8009,25 +8636,32 @@ jSuites.mask = (function() {
                 // Get tokens
                 o.tokens = getTokens.call(o, o.mask);
             }
+
             // On new input
-            if (typeof(e) !== 'object' || ! e.inputType || e.inputType == 'insertText' || e.inputType == 'insertFromPaste') {
-                // Start tranformation
+            if (typeof(e) !== 'object'  || ! e.inputType || ! e.inputType.indexOf('insert') || ! e.inputType.indexOf('delete')) {
+                // Start transformation
                 if (o.locale) {
                     if (o.input) {
-                        Format.call(o, o.input);
+                        Format.call(o, o.input, e);
                     } else {
                         var newValue = FormatValue.call(o, o.value);
                     }
                 } else {
                     // Get tokens
                     o.methods = getMethods.call(o, o.tokens);
+                    o.event = e;
+
                     // Go through all tokes
                     while (o.position < o.value.length && typeof(o.tokens[o.index]) !== 'undefined') {
-                        // Get the approate parser
+                        // Get the appropriate parser
                         parse.call(o);
                     }
 
-                    if (isNumeric(o.type)) {
+                    // New value
+                    var newValue = o.values.join('');
+
+                    // Add tokens to the end of string only if string is not empty
+                    if (isNumeric(o.type) && newValue !== '') {
                         // Complement things in the end of the mask
                         while (typeof(o.tokens[o.index]) !== 'undefined') {
                             var t = getMethod.call(o, o.tokens[o.index]);
@@ -8043,7 +8677,7 @@ jSuites.mask = (function() {
                     }
 
                     // New value
-                    var newValue = o.values.join('');
+                    newValue = o.values.join('');
 
                     // Reset value
                     if (o.input) {
@@ -8093,6 +8727,9 @@ jSuites.mask = (function() {
         }
     }
 
+    // Get the type of the mask
+    obj.getType = getType;
+
     // Extract the tokens from a mask
     obj.prepare = function(str, o) {
         if (! o) {
@@ -8116,7 +8753,7 @@ jSuites.mask = (function() {
      * Legacy support
      */
     obj.run = function(value, mask, decimal) {
-        return obj(value, { mask, decimal });
+        return obj(value, { mask: mask, decimal: decimal });
     }
 
     /**
@@ -8127,8 +8764,10 @@ jSuites.mask = (function() {
             return v;
         }
         if (typeof(options) != 'object') {
-            return value;
+            return v;
         } else {
+            options = Object.assign({}, options);
+
             if (! options.options) {
                 options.options = {};
             }
@@ -8139,30 +8778,47 @@ jSuites.mask = (function() {
             options.mask = options.format;
         }
 
+        // Remove []
+        if (options.mask) {
+            if (options.mask.indexOf(';') !== -1) {
+                var t = options.mask.split(';');
+                options.mask = t[0];
+            }
+            options.mask = options.mask.replace(new RegExp(/\[h]/),'|h|');
+            options.mask = options.mask.replace(new RegExp(/\[.*?\]/),'');
+            options.mask = options.mask.replace(new RegExp(/\|h\|/),'[h]');
+        }
+
         // Get decimal
         getDecimal.call(options, options.mask);
 
         var type = null;
+        var value = null;
+
         if (options.type == 'percent' || options.options.style == 'percent') {
             type = 'percentage';
         } else if (options.mask) {
             type = getType.call(options, options.mask);
         }
 
+        if (type === 'general') {
+            var o = obj(v, options, true);
 
-        if (type === 'datetime') {
+            value = v;
+        } else if (type === 'datetime') {
             if (v instanceof Date) {
-                var t = jSuites.calendar.getDateString(value, options.mask);
+                v = jSuites.calendar.getDateString(v, options.mask);
             }
 
             var o = obj(v, options, true);
-            var value = getDate.call(o);
-            if ((o.date[0] && o.date[1] && o.date[2]) && ! (o.date[3] || o.date[4] || o.date[5])) {
-                var t = jSuites.calendar.now(o.date);
-                value = jSuites.calendar.dateToNum(t);
+
+            if (jSuites.isNumeric(v)) {
+                value = v;
+            } else {
+                value = extractDate.call(o);
             }
         } else {
-            var value = Extract.call(options, v);
+            value = Extract.call(options, v);
             // Percentage
             if (type == 'percentage') {
                 value /= 100;
@@ -8171,6 +8827,10 @@ jSuites.mask = (function() {
         }
 
         o.value = value;
+
+        if (! o.type && type) {
+            o.type = type;
+        }
 
         if (returnObject) {
             return o;
@@ -8190,6 +8850,8 @@ jSuites.mask = (function() {
         if (typeof(options) != 'object') {
             return value;
         } else {
+            options = Object.assign({}, options);
+
             if (! options.options) {
                 options.options = {};
             }
@@ -8198,6 +8860,17 @@ jSuites.mask = (function() {
         // Compatibility
         if (! options.mask && options.format) {
             options.mask = options.format;
+        }
+
+        // Remove []
+        if (options.mask) {
+            if (options.mask.indexOf(';') !== -1) {
+                var t = options.mask.split(';');
+                options.mask = t[0];
+            }
+            options.mask = options.mask.replace(new RegExp(/\[h]/),'|h|');
+            options.mask = options.mask.replace(new RegExp(/\[.*?\]/),'');
+            options.mask = options.mask.replace(new RegExp(/\|h\|/),'[h]');
         }
 
         var type = null;
@@ -8217,7 +8890,6 @@ jSuites.mask = (function() {
             if (t) {
                 value = t;
             }
-
             if (options.mask && fullMask) {
                 fillWithBlanks = true;
             }
@@ -8229,25 +8901,39 @@ jSuites.mask = (function() {
             // Number of decimal places
             if (typeof(value) === 'number') {
                 var t = null;
-                if (options.mask && fullMask) {
-                    var e = new RegExp('0{1}(.{1})0+', 'ig');
-                    var d = options.mask.match(e);
-                    if (d && d[0]) {
-                        d = d[0].length - 2;
+                if (options.mask && fullMask && ((''+value).indexOf('e') === -1)) {
+                    var d = getDecimal.call(options, options.mask);
+                    if (options.mask.indexOf(d) !== -1) {
+                        d = options.mask.split(d);
+                        d = (''+d[1].match(/[0-9]+/g))
+                        d = d.length;
                         t = value.toFixed(d);
                     } else {
-                        t = (''+value);
+                        t = value.toFixed(0);
                     }
                 } else if (options.locale && fullMask) {
+                    // Append zeros 
                     var d = (''+value).split('.');
-                    if (! d[1]) {
-                        d[1] = '00';
-                    } else {
-                        if (d[1].length == 1) {
-                            d[1] += '0';
+                    if (options.options) {
+                        if (typeof(d[1]) === 'undefined') {
+                            d[1] = '';
+                        }
+                        var len = d[1].length;
+                        if (options.options.minimumFractionDigits > len) {
+                            for (var i = 0; i < options.options.minimumFractionDigits - len; i++) {
+                                d[1] += '0';
+                            }
                         }
                     }
-                    t = d.join('.');
+                    if (! d[1].length) {
+                        t = d[0]
+                    } else {
+                        t = d.join('.');
+                    }
+                    var len = d[1].length;
+                    if (options.options && options.options.maximumFractionDigits < len) {
+                        t = parseFloat(t).toFixed(options.options.maximumFractionDigits);
+                    }
                 } else {
                     t = toPlainString(value);
                 }
@@ -8278,6 +8964,20 @@ jSuites.mask = (function() {
         }
 
         value = obj(value, options);
+
+        // Numeric mask, number of zeros
+        if (fullMask && type === 'numeric') {
+            var maskZeros = options.mask.match(new RegExp(/^[0]+$/gm));
+            if (maskZeros && maskZeros.length === 1) {
+                var maskLength = maskZeros[0].length;
+                if (maskLength > 3) {
+                    value = '' + value;
+                    while (value.length < maskLength) {
+                        value = '0' + value;
+                    }
+                }
+            }
+        }
 
         return value;
     }
@@ -8314,11 +9014,14 @@ jSuites.modal = (function(el, options) {
         url: null,
         onopen: null,
         onclose: null,
+        onload: null,
         closed: false,
         width: null,
         height: null,
         title: null,
         padding: null,
+        backdrop: true,
+        icon: null,
     };
 
     // Loop through our object
@@ -8340,6 +9043,12 @@ jSuites.modal = (function(el, options) {
         temp.appendChild(el.children[0]);
     }
 
+    obj.title = document.createElement('div');
+    obj.title.className = 'jmodal_title';
+    if (obj.options.icon) {
+        obj.title.setAttribute('data-icon', obj.options.icon);
+    }
+
     obj.content = document.createElement('div');
     obj.content.className = 'jmodal_content';
     obj.content.innerHTML = el.innerHTML;
@@ -8350,6 +9059,7 @@ jSuites.modal = (function(el, options) {
 
     obj.container = document.createElement('div');
     obj.container.className = 'jmodal';
+    obj.container.appendChild(obj.title);
     obj.container.appendChild(obj.content);
 
     if (obj.options.padding) {
@@ -8362,21 +9072,24 @@ jSuites.modal = (function(el, options) {
         obj.container.style.height = obj.options.height;
     }
     if (obj.options.title) {
-        obj.container.setAttribute('title', obj.options.title);
-    } else {
-        obj.container.classList.add('no-title');
+        var title = document.createElement('h4');
+        title.innerText = obj.options.title;
+        obj.title.appendChild(title);
     }
+
     el.innerHTML = '';
     el.style.display = 'none';
     el.appendChild(obj.container);
 
     // Backdrop
-    var backdrop = document.createElement('div');
-    backdrop.className = 'jmodal_backdrop';
-    backdrop.onclick = function() {
-        obj.close();
+    if (obj.options.backdrop) {
+        var backdrop = document.createElement('div');
+        backdrop.className = 'jmodal_backdrop';
+        backdrop.onclick = function () {
+            obj.close();
+        }
+        el.appendChild(backdrop);
     }
-    el.appendChild(backdrop);
 
     obj.open = function() {
         el.style.display = 'block';
@@ -8388,10 +9101,10 @@ jSuites.modal = (function(el, options) {
             obj.container.classList.add('jmodal_fullscreen');
             jSuites.animation.slideBottom(obj.container, 1);
         } else {
-            backdrop.style.display = 'block';
+            if (obj.options.backdrop) {
+                backdrop.style.display = 'block';
+            }
         }
-        // Current
-        jSuites.modal.current = obj;
         // Event
         if (typeof(obj.options.onopen) == 'function') {
             obj.options.onopen(el, obj);
@@ -8408,31 +9121,117 @@ jSuites.modal = (function(el, options) {
     }
 
     obj.close = function() {
-        el.style.display = 'none';
-        // Backdrop
-        backdrop.style.display = '';
-        // Current
-        jSuites.modal.current = null;
-        // Remove fullscreen class
-        obj.container.classList.remove('jmodal_fullscreen');
-        // Event
-        if (typeof(obj.options.onclose) == 'function') {
-            obj.options.onclose(el, obj);
+        if (obj.isOpen()) {
+            el.style.display = 'none';
+            if (obj.options.backdrop) {
+                // Backdrop
+                backdrop.style.display = '';
+            }
+            // Remove fullscreen class
+            obj.container.classList.remove('jmodal_fullscreen');
+            // Event
+            if (typeof(obj.options.onclose) == 'function') {
+                obj.options.onclose(el, obj);
+            }
         }
     }
 
     if (! jSuites.modal.hasEvents) {
-        jSuites.modal.current = obj;
+        //  Position
+        var tracker = null;
 
-        if ('ontouchstart' in document.documentElement === true) {
-            document.addEventListener("touchstart", jSuites.modal.mouseDownControls);
-        } else {
-            document.addEventListener('mousedown', jSuites.modal.mouseDownControls);
-            document.addEventListener('mousemove', jSuites.modal.mouseMoveControls);
-            document.addEventListener('mouseup', jSuites.modal.mouseUpControls);
-        }
+        document.addEventListener('keydown', function(e) {
+            if (e.which == 27) {
+                var modals = document.querySelectorAll('.jmodal');
+                for (var i = 0; i < modals.length; i++) {
+                    modals[i].parentNode.modal.close();
+                }
+            }
+        });
 
-        document.addEventListener('keydown', jSuites.modal.keyDownControls);
+        document.addEventListener('mouseup', function(e) {
+            var item = jSuites.findElement(e.target, 'jmodal');
+            if (item) {
+                // Get target info
+                var rect = item.getBoundingClientRect();
+
+                if (e.changedTouches && e.changedTouches[0]) {
+                    var x = e.changedTouches[0].clientX;
+                    var y = e.changedTouches[0].clientY;
+                } else {
+                    var x = e.clientX;
+                    var y = e.clientY;
+                }
+
+                if (rect.width - (x - rect.left) < 50 && (y - rect.top) < 50) {
+                    item.parentNode.modal.close();
+                }
+            }
+
+            if (tracker) {
+                tracker.element.style.cursor = 'auto';
+                tracker = null;
+            }
+        });
+
+        document.addEventListener('mousedown', function(e) {
+            var item = jSuites.findElement(e.target, 'jmodal');
+            if (item) {
+                // Get target info
+                var rect = item.getBoundingClientRect();
+
+                if (e.changedTouches && e.changedTouches[0]) {
+                    var x = e.changedTouches[0].clientX;
+                    var y = e.changedTouches[0].clientY;
+                } else {
+                    var x = e.clientX;
+                    var y = e.clientY;
+                }
+
+                if (rect.width - (x - rect.left) < 50 && (y - rect.top) < 50) {
+                    // Do nothing
+                } else {
+                    if (y - rect.top < 50) {
+                        if (document.selection) {
+                            document.selection.empty();
+                        } else if ( window.getSelection ) {
+                            window.getSelection().removeAllRanges();
+                        }
+
+                        tracker = {
+                            left: rect.left,
+                            top: rect.top,
+                            x: e.clientX,
+                            y: e.clientY,
+                            width: rect.width,
+                            height: rect.height,
+                            element: item,
+                        }
+                    }
+                }
+            }
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (tracker) {
+                e = e || window.event;
+                if (e.buttons) {
+                    var mouseButton = e.buttons;
+                } else if (e.button) {
+                    var mouseButton = e.button;
+                } else {
+                    var mouseButton = e.which;
+                }
+
+                if (mouseButton) {
+                    tracker.element.style.top = (tracker.top + (e.clientY - tracker.y) + (tracker.height / 2)) + 'px';
+                    tracker.element.style.left = (tracker.left + (e.clientX - tracker.x) + (tracker.width / 2)) + 'px';
+                    tracker.element.style.cursor = 'move';
+                } else {
+                    tracker.element.style.cursor = 'auto';
+                }
+            }
+        });
 
         jSuites.modal.hasEvents = true;
     }
@@ -8448,11 +9247,19 @@ jSuites.modal = (function(el, options) {
                 if (! obj.options.closed) {
                     obj.open();
                 }
+
+                if (typeof(obj.options.onload) === 'function') {
+                    obj.options.onload(obj);
+                }
             }
         });
     } else {
         if (! obj.options.closed) {
             obj.open();
+        }
+
+        if (typeof(obj.options.onload) === 'function') {
+            obj.options.onload(obj);
         }
     }
 
@@ -8461,79 +9268,6 @@ jSuites.modal = (function(el, options) {
 
     return obj;
 });
-
-jSuites.modal.current = null;
-jSuites.modal.position = null;
-
-jSuites.modal.keyDownControls = function(e) {
-    if (e.which == 27) {
-        if (jSuites.modal.current) {
-            jSuites.modal.current.close();
-        }
-    }
-}
-
-jSuites.modal.mouseUpControls = function(e) {
-    if (jSuites.modal.current) {
-        jSuites.modal.current.container.style.cursor = 'auto';
-    }
-    jSuites.modal.position = null;
-}
-
-jSuites.modal.mouseMoveControls = function(e) {
-    if (jSuites.modal.current && jSuites.modal.position) {
-        if (e.which == 1 || e.which == 3) {
-            var position = jSuites.modal.position;
-            jSuites.modal.current.container.style.top = (position[1] + (e.clientY - position[3]) + (position[5] / 2)) + 'px';
-            jSuites.modal.current.container.style.left = (position[0] + (e.clientX - position[2]) + (position[4] / 2)) + 'px';
-            jSuites.modal.current.container.style.cursor = 'move';
-        } else {
-            jSuites.modal.current.container.style.cursor = 'auto';
-        }
-    }
-}
-
-jSuites.modal.mouseDownControls = function(e) {
-    jSuites.modal.position = [];
-
-    if (e.target.classList.contains('jmodal')) {
-        setTimeout(function() {
-            // Get target info
-            var rect = e.target.getBoundingClientRect();
-
-            if (e.changedTouches && e.changedTouches[0]) {
-                var x = e.changedTouches[0].clientX;
-                var y = e.changedTouches[0].clientY;
-            } else {
-                var x = e.clientX;
-                var y = e.clientY;
-            }
-
-            if (rect.width - (x - rect.left) < 50 && (y - rect.top) < 50) {
-                setTimeout(function() {
-                    jSuites.modal.current.close();
-                }, 100);
-            } else {
-                if (e.target.getAttribute('title') && (y - rect.top) < 50) {
-                    if (document.selection) {
-                        document.selection.empty();
-                    } else if ( window.getSelection ) {
-                        window.getSelection().removeAllRanges();
-                    }
-
-                    jSuites.modal.position = [
-                        rect.left,
-                        rect.top,
-                        e.clientX,
-                        e.clientY,
-                        rect.width,
-                        rect.height,
-                    ];
-                }
-            }
-        }, 100);
-    }
-}
 
 
 jSuites.notification = (function(options) {
@@ -8677,46 +9411,70 @@ jSuites.notification.isVisible = function() {
 }
 
 // More palettes https://coolors.co/ or https://gka.github.io/palettes/#/10|s|003790,005647,ffffe0|ffffe0,ff005e,93003a|1|1
-
-jSuites.palette = function(o) {
-    // Material
-    var palette = {};
-
-    palette.material = [
-        [ "#ffebee", "#fce4ec", "#f3e5f5", "#e8eaf6", "#e3f2fd", "#e0f7fa", "#e0f2f1", "#e8f5e9", "#f1f8e9", "#f9fbe7", "#fffde7", "#fff8e1", "#fff3e0", "#fbe9e7", "#efebe9", "#fafafa", "#eceff1" ],
-        [ "#ffcdd2", "#f8bbd0", "#e1bee7", "#c5cae9", "#bbdefb", "#b2ebf2", "#b2dfdb", "#c8e6c9", "#dcedc8", "#f0f4c3", "#fff9c4", "#ffecb3", "#ffe0b2", "#ffccbc", "#d7ccc8", "#f5f5f5", "#cfd8dc" ],
-        [ "#ef9a9a", "#f48fb1", "#ce93d8", "#9fa8da", "#90caf9", "#80deea", "#80cbc4", "#a5d6a7", "#c5e1a5", "#e6ee9c", "#fff59d", "#ffe082", "#ffcc80", "#ffab91", "#bcaaa4", "#eeeeee", "#b0bec5" ],
-        [ "#e57373", "#f06292", "#ba68c8", "#7986cb", "#64b5f6", "#4dd0e1", "#4db6ac", "#81c784", "#aed581", "#dce775", "#fff176", "#ffd54f", "#ffb74d", "#ff8a65", "#a1887f", "#e0e0e0", "#90a4ae" ],
-        [ "#ef5350", "#ec407a", "#ab47bc", "#5c6bc0", "#42a5f5", "#26c6da", "#26a69a", "#66bb6a", "#9ccc65", "#d4e157", "#ffee58", "#ffca28", "#ffa726", "#ff7043", "#8d6e63", "#bdbdbd", "#78909c" ],
-        [ "#f44336", "#e91e63", "#9c27b0", "#3f51b5", "#2196f3", "#00bcd4", "#009688", "#4caf50", "#8bc34a", "#cddc39", "#ffeb3b", "#ffc107", "#ff9800", "#ff5722", "#795548", "#9e9e9e", "#607d8b" ],
-        [ "#e53935", "#d81b60", "#8e24aa", "#3949ab", "#1e88e5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33", "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575", "#546e7a" ],
-        [ "#d32f2f", "#c2185b", "#7b1fa2", "#303f9f", "#1976d2", "#0097a7", "#00796b", "#388e3c", "#689f38", "#afb42b", "#fbc02d", "#ffa000", "#f57c00", "#e64a19", "#5d4037", "#616161", "#455a64" ],
-        [ "#c62828", "#ad1457", "#6a1b9a", "#283593", "#1565c0", "#00838f", "#00695c", "#2e7d32", "#558b2f", "#9e9d24", "#f9a825", "#ff8f00", "#ef6c00", "#d84315", "#4e342e", "#424242", "#37474f" ],
-        [ "#b71c1c", "#880e4f", "#4a148c", "#1a237e", "#0d47a1", "#006064", "#004d40", "#1b5e20", "#33691e", "#827717", "#f57f17", "#ff6f00", "#e65100", "#bf360c", "#3e2723", "#212121", "#263238" ],
-    ];
-
-    palette.fire = [
-        ["0b1a6d","840f38","b60718","de030b","ff0c0c","fd491c","fc7521","faa331","fbb535","ffc73a"],
-        ["071147","5f0b28","930513","be0309","ef0000","fa3403","fb670b","f9991b","faad1e","ffc123"],
-        ["03071e","370617","6a040f","9d0208","d00000","dc2f02","e85d04","f48c06","faa307","ffba08"],
-        ["020619","320615","61040d","8c0207","bc0000","c82a02","d05203","db7f06","e19405","efab00"],
-        ["020515","2d0513","58040c","7f0206","aa0000","b62602","b94903","c57205","ca8504","d89b00"],
-    ]
-
-    palette.baby = [
-        ["eddcd2","fff1e6","fde2e4","fad2e1","c5dedd","dbe7e4","f0efeb","d6e2e9","bcd4e6","99c1de"],
-        ["e1c4b3","ffd5b5","fab6ba","f5a8c4","aacecd","bfd5cf","dbd9d0","baceda","9dc0db","7eb1d5"],
-        ["daa990","ffb787","f88e95","f282a9","8fc4c3","a3c8be","cec9b3","9dbcce","82acd2","649dcb"],
-        ["d69070","ff9c5e","f66770","f05f8f","74bbb9","87bfae","c5b993","83aac3","699bca","4d89c2"],
-        ["c97d5d","f58443","eb4d57","e54a7b","66a9a7","78ae9c","b5a67e","7599b1","5c88b7","4978aa"],
-    ]
-
-    if (palette[o]) {
-        return palette[o];
-    } else {
-        return palette.material;
+jSuites.palette = (function() {
+    /**
+     * Available palettes
+     */
+    var palette = {
+        material: [
+            [ "#ffebee", "#fce4ec", "#f3e5f5", "#e8eaf6", "#e3f2fd", "#e0f7fa", "#e0f2f1", "#e8f5e9", "#f1f8e9", "#f9fbe7", "#fffde7", "#fff8e1", "#fff3e0", "#fbe9e7", "#efebe9", "#fafafa", "#eceff1" ],
+            [ "#ffcdd2", "#f8bbd0", "#e1bee7", "#c5cae9", "#bbdefb", "#b2ebf2", "#b2dfdb", "#c8e6c9", "#dcedc8", "#f0f4c3", "#fff9c4", "#ffecb3", "#ffe0b2", "#ffccbc", "#d7ccc8", "#f5f5f5", "#cfd8dc" ],
+            [ "#ef9a9a", "#f48fb1", "#ce93d8", "#9fa8da", "#90caf9", "#80deea", "#80cbc4", "#a5d6a7", "#c5e1a5", "#e6ee9c", "#fff59d", "#ffe082", "#ffcc80", "#ffab91", "#bcaaa4", "#eeeeee", "#b0bec5" ],
+            [ "#e57373", "#f06292", "#ba68c8", "#7986cb", "#64b5f6", "#4dd0e1", "#4db6ac", "#81c784", "#aed581", "#dce775", "#fff176", "#ffd54f", "#ffb74d", "#ff8a65", "#a1887f", "#e0e0e0", "#90a4ae" ],
+            [ "#ef5350", "#ec407a", "#ab47bc", "#5c6bc0", "#42a5f5", "#26c6da", "#26a69a", "#66bb6a", "#9ccc65", "#d4e157", "#ffee58", "#ffca28", "#ffa726", "#ff7043", "#8d6e63", "#bdbdbd", "#78909c" ],
+            [ "#f44336", "#e91e63", "#9c27b0", "#3f51b5", "#2196f3", "#00bcd4", "#009688", "#4caf50", "#8bc34a", "#cddc39", "#ffeb3b", "#ffc107", "#ff9800", "#ff5722", "#795548", "#9e9e9e", "#607d8b" ],
+            [ "#e53935", "#d81b60", "#8e24aa", "#3949ab", "#1e88e5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33", "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575", "#546e7a" ],
+            [ "#d32f2f", "#c2185b", "#7b1fa2", "#303f9f", "#1976d2", "#0097a7", "#00796b", "#388e3c", "#689f38", "#afb42b", "#fbc02d", "#ffa000", "#f57c00", "#e64a19", "#5d4037", "#616161", "#455a64" ],
+            [ "#c62828", "#ad1457", "#6a1b9a", "#283593", "#1565c0", "#00838f", "#00695c", "#2e7d32", "#558b2f", "#9e9d24", "#f9a825", "#ff8f00", "#ef6c00", "#d84315", "#4e342e", "#424242", "#37474f" ],
+            [ "#b71c1c", "#880e4f", "#4a148c", "#1a237e", "#0d47a1", "#006064", "#004d40", "#1b5e20", "#33691e", "#827717", "#f57f17", "#ff6f00", "#e65100", "#bf360c", "#3e2723", "#212121", "#263238" ],
+        ],
+        fire: [
+            ["0b1a6d","840f38","b60718","de030b","ff0c0c","fd491c","fc7521","faa331","fbb535","ffc73a"],
+            ["071147","5f0b28","930513","be0309","ef0000","fa3403","fb670b","f9991b","faad1e","ffc123"],
+            ["03071e","370617","6a040f","9d0208","d00000","dc2f02","e85d04","f48c06","faa307","ffba08"],
+            ["020619","320615","61040d","8c0207","bc0000","c82a02","d05203","db7f06","e19405","efab00"],
+            ["020515","2d0513","58040c","7f0206","aa0000","b62602","b94903","c57205","ca8504","d89b00"],
+        ],
+        baby: [
+            ["eddcd2","fff1e6","fde2e4","fad2e1","c5dedd","dbe7e4","f0efeb","d6e2e9","bcd4e6","99c1de"],
+            ["e1c4b3","ffd5b5","fab6ba","f5a8c4","aacecd","bfd5cf","dbd9d0","baceda","9dc0db","7eb1d5"],
+            ["daa990","ffb787","f88e95","f282a9","8fc4c3","a3c8be","cec9b3","9dbcce","82acd2","649dcb"],
+            ["d69070","ff9c5e","f66770","f05f8f","74bbb9","87bfae","c5b993","83aac3","699bca","4d89c2"],
+            ["c97d5d","f58443","eb4d57","e54a7b","66a9a7","78ae9c","b5a67e","7599b1","5c88b7","4978aa"],
+        ],
+        chart: [
+            ['#C1D37F','#4C5454','#FFD275','#66586F','#D05D5B','#C96480','#95BF8F','#6EA240','#0F0F0E','#EB8258','#95A3B3','#995D81'],
+        ],
     }
-}
+
+    /**
+     * Get a pallete
+     */
+    var component = function(o) {
+        // Otherwise get palette value
+        if (palette[o]) {
+            return palette[o];
+        } else {
+            return palette.material;
+        }
+    }
+
+    component.get = function(o) {
+        // Otherwise get palette value
+        if (palette[o]) {
+            return palette[o];
+        } else {
+            return palette;
+        }
+    }
+
+    component.set = function(o, v) {
+        palette[o] = v;
+    }
+
+    return component;
+})();
+
 
 jSuites.picker = (function(el, options) {
     // Already created, update options
@@ -8730,6 +9488,13 @@ jSuites.picker = (function(el, options) {
 
     var dropdownHeader = null;
     var dropdownContent = null;
+
+    /**
+     * The element passed is a DOM element
+     */
+    var isDOM = function(o) {
+        return (o instanceof Element || o instanceof HTMLDocument);
+    }
 
     /**
      * Create the content options
@@ -8748,7 +9513,12 @@ jSuites.picker = (function(el, options) {
             dropdownItem.k = keys[i];
             dropdownItem.v = obj.options.data[keys[i]];
             // Label
-            dropdownItem.innerHTML = obj.getLabel(keys[i]);
+            var item = obj.getLabel(keys[i], dropdownItem);
+            if (isDOM(item)) {
+                dropdownItem.appendChild(item);
+            } else {
+                dropdownItem.innerHTML = item;
+            }
             // Append
             dropdownContent.appendChild(dropdownItem);
         }
@@ -8764,6 +9534,7 @@ jSuites.picker = (function(el, options) {
             data: null,
             render: null,
             onchange: null,
+            onmouseover: null,
             onselect: null,
             onopen: null,
             onclose: null,
@@ -8771,8 +9542,10 @@ jSuites.picker = (function(el, options) {
             width: null,
             header: true,
             right: false,
+            bottom: false,
             content: false,
             columns: null,
+            grid: null,
             height: null,
         }
 
@@ -8815,8 +9588,13 @@ jSuites.picker = (function(el, options) {
         }
 
         if (obj.options.columns > 0) {
-            dropdownContent.classList.add('jpicker-columns');
-            dropdownContent.style.width =  obj.options.width ? obj.options.width : 36 * obj.options.columns + 'px';
+            if (! obj.options.grid) {
+                dropdownContent.classList.add('jpicker-columns');
+                dropdownContent.style.width = obj.options.width ? obj.options.width : 36 * obj.options.columns + 'px';
+            } else {
+                dropdownContent.classList.add('jpicker-grid');
+                dropdownContent.style.gridTemplateColumns = 'repeat(' + obj.options.grid + ', 1fr)';
+            }
         }
 
         if (isNaN(obj.options.value)) {
@@ -8837,46 +9615,60 @@ jSuites.picker = (function(el, options) {
         return obj.options.value;
     }
 
-    obj.setValue = function(v) {
+    obj.setValue = function(k, e) {
         // Set label
-        obj.setLabel(v);
+        obj.setLabel(k);
 
         // Update value
-        obj.options.value = String(v);
+        obj.options.value = String(k);
 
         // Lemonade JS
         if (el.value != obj.options.value) {
             el.value = obj.options.value;
-            if (typeof(el.onchange) == 'function') {
-                el.onchange({
-                    type: 'change',
+            if (typeof(el.oninput) == 'function') {
+                el.oninput({
+                    type: 'input',
                     target: el,
                     value: el.value
                 });
             }
         }
 
-        if (dropdownContent.children[v].getAttribute('type') !== 'generic') {
+        var v = obj.options.data[k];
+
+        // Call method
+        if (typeof(obj.options.onchange) == 'function') {
+            obj.options.onchange.call(obj, el, obj, v, v, k, e);
+        }
+
+        if (dropdownContent.children[k] && dropdownContent.children[k].getAttribute('type') !== 'generic') {
             obj.close();
         }
     }
 
-    obj.getLabel = function(v) {
+    obj.getLabel = function(v, item) {
         var label = obj.options.data[v] || null;
         if (typeof(obj.options.render) == 'function') {
-            label = obj.options.render(label);
+            label = obj.options.render(label, item);
         }
         return label;
     }
 
     obj.setLabel = function(v) {
-        if (obj.options.content) {
-            var label = '<i class="material-icons">' + obj.options.content + '</i>';
-        } else {
-            var label = obj.getLabel(v);
-        }
+        var item;
 
-        dropdownHeader.innerHTML = label;
+        if (obj.options.content) {
+            item = '<i class="material-icons">' + obj.options.content + '</i>';
+        } else {
+            item = obj.getLabel(v, null);
+        }
+        // Label
+        if (isDOM(item)) {
+            dropdownHeader.innerHTML = '';
+            dropdownHeader.appendChild(item);
+        } else {
+            dropdownHeader.innerHTML = item;
+        }
     }
 
     obj.open = function() {
@@ -8888,18 +9680,35 @@ jSuites.picker = (function(el, options) {
             el.classList.add('jpicker-focus');
             el.focus();
 
+            var top = 0;
+            var left = 0;
+
+            dropdownContent.style.marginLeft = '';
+
             var rectHeader = dropdownHeader.getBoundingClientRect();
             var rectContent = dropdownContent.getBoundingClientRect();
-            if (window.innerHeight < rectHeader.bottom + rectContent.height) {
-                dropdownContent.style.marginTop = -1 * (rectContent.height + 4) + 'px';
+
+            if (window.innerHeight < rectHeader.bottom + rectContent.height || obj.options.bottom) {
+                top = -1 * (rectContent.height + 4);
             } else {
-                dropdownContent.style.marginTop = rectHeader.height + 2 + 'px';
+                top = rectHeader.height + 4;
             }
 
             if (obj.options.right === true) {
-                dropdownContent.style.marginLeft = -1 * rectContent.width + 24 + 'px';
+                left = -1 * rectContent.width + rectHeader.width;
             }
 
+            if (rectContent.left + left < 0) {
+                left = left + rectContent.left + 10;
+            }
+            if (rectContent.left + rectContent.width > window.innerWidth) {
+                left = -1 * (10 + rectContent.left + rectContent.width - window.innerWidth);
+            }
+
+            dropdownContent.style.marginTop = parseInt(top) + 'px';
+            dropdownContent.style.marginLeft = parseInt(left) + 'px';
+
+            //dropdownContent.style.marginTop
             if (typeof obj.options.onopen == 'function') {
                 obj.options.onopen(el, obj);
             }
@@ -8944,15 +9753,10 @@ jSuites.picker = (function(el, options) {
             if (item) {
                 if (item.parentNode === dropdownContent) {
                     // Update label
-                    obj.setValue(item.k);
-                    // Call method
-                    if (typeof(obj.options.onchange) == 'function') {
-                        obj.options.onchange.call(obj, el, obj, item.v, item.v, item.k);
-                    }
+                    obj.setValue(item.k, e);
                 }
             }
         }
-
         // Append content and header
         el.appendChild(dropdownHeader);
         el.appendChild(dropdownContent);
@@ -8987,6 +9791,7 @@ jSuites.picker = (function(el, options) {
 
     return obj;
 });
+
 
 jSuites.progressbar = (function(el, options) {
     var obj = {};
@@ -9045,9 +9850,9 @@ jSuites.progressbar = (function(el, options) {
         // Lemonade JS
         if (el.value != obj.options.value) {
             el.value = obj.options.value;
-            if (typeof(el.onchange) == 'function') {
-                el.onchange({
-                    type: 'change',
+            if (typeof(el.oninput) == 'function') {
+                el.oninput({
+                    type: 'input',
                     target: el,
                     value: el.value
                 });
@@ -9176,9 +9981,9 @@ jSuites.rating = (function(el, options) {
         // Lemonade JS
         if (el.value != obj.options.value) {
             el.value = obj.options.value;
-            if (typeof(el.onchange) == 'function') {
-                el.onchange({
-                    type: 'change',
+            if (typeof(el.oninput) == 'function') {
+                el.oninput({
+                    type: 'input',
                     target: el,
                     value: el.value
                 });
@@ -9392,8 +10197,10 @@ jSuites.search = (function(el, options) {
     obj.options = {
         data: options.data || null,
         input: options.input || null,
+        searchByNode: options.searchByNode || null,
         onselect: options.onselect || null,
         forceSelect: options.forceSelect,
+        onbeforesearch: options.onbeforesearch || null,
     };
 
     obj.selectIndex = function(item) {
@@ -9467,15 +10274,33 @@ jSuites.search = (function(el, options) {
     }
 
     obj.keyup = function(e) {
-        if (obj.options.input) {
-            obj(obj.options.input.value);
+        if (! obj.options.searchByNode && obj.options.input) {
+            if (obj.options.input.tagName === 'DIV') {
+                var terms = obj.options.input.innerText;
+            } else {
+                var terms = obj.options.input.value;
+            }
         } else {
             // Current node
             var node = jSuites.getNode();
             if (node) {
-                obj(node.innerText);
+                var terms = node.innerText;
             }
         }
+
+        if (typeof(obj.options.onbeforesearch) == 'function') {
+            var ret = obj.options.onbeforesearch(obj, terms);
+            if (ret) {
+                terms = ret;
+            } else {
+                if (ret === false) {
+                    // Ignore event
+                    return;
+                }
+            }
+        }
+
+        obj(terms);
     }
     
     // Add events
@@ -9900,21 +10725,23 @@ jSuites.tabs = (function(el, options) {
     // Helpers
     var setBorder = function(index) {
         if (obj.options.animation) {
-            var rect = obj.headers.children[index].getBoundingClientRect();
+            setTimeout(function() {
+                var rect = obj.headers.children[index].getBoundingClientRect();
 
-            if (obj.options.palette == 'modern') {
-                border.style.width = rect.width - 4 + 'px';
-                border.style.left = obj.headers.children[index].offsetLeft + 2 + 'px';
-            } else {
-                border.style.width = rect.width + 'px';
-                border.style.left = obj.headers.children[index].offsetLeft + 'px';
-            }
+                if (obj.options.palette == 'modern') {
+                    border.style.width = rect.width - 4 + 'px';
+                    border.style.left = obj.headers.children[index].offsetLeft + 2 + 'px';
+                } else {
+                    border.style.width = rect.width + 'px';
+                    border.style.left = obj.headers.children[index].offsetLeft + 'px';
+                }
 
-            if (obj.options.position == 'bottom') {
-                border.style.top = '0px';
-            } else {
-                border.style.bottom = '0px';
-            }
+                if (obj.options.position == 'bottom') {
+                    border.style.top = '0px';
+                } else {
+                    border.style.bottom = '0px';
+                }
+            }, 150);
         }
     }
 
@@ -10031,6 +10858,8 @@ jSuites.tabs = (function(el, options) {
             obj.options.oncreate(el, div)
         }
 
+        setBorder();
+
         return div;
     }
 
@@ -10125,6 +10954,8 @@ jSuites.tabs = (function(el, options) {
         }
 
         obj.content.replaceChild(newContent, obj.content.children[position]);
+
+        setBorder();
     }
 
     obj.updatePosition = function(f, t) {
@@ -10406,6 +11237,7 @@ jSuites.tags = (function(el, options) {
             search: null,
             placeholder: null,
             validation: null,
+            onbeforepaste: null,
             onbeforechange: null,
             onlimit: null,
             onchange: null,
@@ -10706,7 +11538,7 @@ jSuites.tags = (function(el, options) {
     }
 
     var setFocus = function(node) {
-        if (el.children.length > 1) {
+        if (el.children.length) {
             var range = document.createRange();
             var sel = window.getSelection();
             if (! node) {
@@ -10749,9 +11581,9 @@ jSuites.tags = (function(el, options) {
             // Lemonade JS
             if (el.value != obj.options.value) {
                 el.value = obj.options.value;
-                if (typeof(el.onchange) == 'function') {
-                    el.onchange({
-                        type: 'change',
+                if (typeof(el.oninput) == 'function') {
+                    el.oninput({
+                        type: 'input',
                         target: el,
                         value: el.value
                     });
@@ -10767,25 +11599,27 @@ jSuites.tags = (function(el, options) {
      */
     var filter = function() {
         for (var i = 0; i < el.children.length; i++) {
-            // Create label design
-            if (! obj.getValue(i)) {
-                el.children[i].classList.remove('jtags_label');
-            } else {
-                el.children[i].classList.add('jtags_label');
+            if (el.children[i].tagName === 'DIV') {
+                // Create label design
+                if (!obj.getValue(i)) {
+                    el.children[i].classList.remove('jtags_label');
+                } else {
+                    el.children[i].classList.add('jtags_label');
 
-                // Validation in place
-                if (typeof(obj.options.validation) == 'function') {
-                    if (obj.getValue(i)) {
-                        if (! obj.options.validation(el.children[i], el.children[i].innerText, el.children[i].getAttribute('data-value'))) {
-                            el.children[i].classList.add('jtags_error');
+                    // Validation in place
+                    if (typeof (obj.options.validation) == 'function') {
+                        if (obj.getValue(i)) {
+                            if (!obj.options.validation(el.children[i], el.children[i].innerText, el.children[i].getAttribute('data-value'))) {
+                                el.children[i].classList.add('jtags_error');
+                            } else {
+                                el.children[i].classList.remove('jtags_error');
+                            }
                         } else {
                             el.children[i].classList.remove('jtags_error');
                         }
                     } else {
                         el.children[i].classList.remove('jtags_error');
                     }
-                } else {
-                    el.children[i].classList.remove('jtags_error');
                 }
             }
         }
@@ -10796,8 +11630,10 @@ jSuites.tags = (function(el, options) {
     var isEmpty = function() {
         // Can't be empty
         if (! el.innerText.trim()) {
-            el.innerHTML = '<div></div>';
-            el.classList.add('jtags-empty');
+            if (! el.children.length || el.children[0].tagName === 'BR') {
+                el.innerHTML = '';
+                setFocus(createElement());
+            }
         } else {
             el.classList.remove('jtags-empty');
         }
@@ -10886,6 +11722,9 @@ jSuites.tags = (function(el, options) {
         if (search) {
             search.keydown(e);
         }
+
+        // Verify if is empty
+        isEmpty();
     }
 
     /**
@@ -10922,8 +11761,24 @@ jSuites.tags = (function(el, options) {
         }
 
         var data = extractTags(text);
+
+        if (typeof(obj.options.onbeforepaste) == 'function') {
+            var ret = obj.options.onbeforepaste(el, obj, data);
+            if (ret === false) {
+                e.preventDefault();
+                return false;
+            } else {
+                if (ret) {
+                    data = ret;
+                }
+            }
+        }
+
         if (data.length > 1) {
             obj.add(data, true);
+            e.preventDefault();
+        } else if (data[0]) {
+            document.execCommand('insertText', false, data[0])
             e.preventDefault();
         }
     }
@@ -11047,6 +11902,7 @@ jSuites.toolbar = (function(el, options) {
         title: false,
         responsive: false,
         maxWidth: null,
+        bottom: true,
         items: [],
     }
 
@@ -11116,6 +11972,14 @@ jSuites.toolbar = (function(el, options) {
                 toolbarItem.updateState(el, obj, toolbarItem, a, b);
             }
         }
+        for (var i = 0; i < toolbarFloating.children.length; i++) {
+            // Toolbar element
+            var toolbarItem = toolbarFloating.children[i];
+            // State management
+            if (typeof(toolbarItem.updateState) == 'function') {
+                toolbarItem.updateState(el, obj, toolbarItem, a, b);
+            }
+        }
     }
 
     obj.create = function(items) {
@@ -11150,6 +12014,10 @@ jSuites.toolbar = (function(el, options) {
 
             if (items[i].active) {
                 toolbarItem.classList.add('jtoolbar-active');
+            }
+
+            if (items[i].disabled) {
+                toolbarItem.classList.add('jtoolbar-disabled');
             }
 
             if (items[i].type == 'select' || items[i].type == 'dropdown') {
@@ -11217,14 +12085,17 @@ jSuites.toolbar = (function(el, options) {
         }
 
         // Fits to the page
-        obj.refresh();
+        setTimeout(function() {
+            obj.refresh();
+        }, 0);
     }
 
     obj.open = function() {
         toolbarArrow.classList.add('jtoolbar-arrow-selected');
 
+        var rectElement = el.getBoundingClientRect();
         var rect = toolbarFloating.getBoundingClientRect();
-        if (rect.bottom > window.innerHeight) {
+        if (rect.bottom > window.innerHeight || obj.options.bottom) {
             toolbarFloating.style.bottom = '0';
         } else {
             toolbarFloating.style.removeProperty('bottom');
@@ -11250,16 +12121,16 @@ jSuites.toolbar = (function(el, options) {
             if (! obj.options.maxWidth) {
                 obj.options.maxWidth = rect.width;
             }
-            // Max width
-            var width = parseInt(obj.options.maxWidth); 
+            // Available parent space
+            var available = parseInt(obj.options.maxWidth);
             // Remove arrow
-            toolbarArrow.remove();
+            if (toolbarArrow.parentNode) {
+                toolbarArrow.parentNode.removeChild(toolbarArrow);
+            }
             // Move all items to the toolbar
             while (toolbarFloating.firstChild) {
                 toolbarContent.appendChild(toolbarFloating.firstChild);
             }
-            // Available parent space
-            var available = obj.options.maxWidth;
             // Toolbar is larger than the parent, move elements to the floating element
             if (available < toolbarContent.offsetWidth) {
                 // Give space to the floating element
@@ -11274,6 +12145,11 @@ jSuites.toolbar = (function(el, options) {
                 toolbarContent.appendChild(toolbarArrow);
             }
         }
+    }
+
+    obj.setReadonly = function(state) {
+        state = state ? 'add' : 'remove';
+        el.classList[state]('jtoolbar-disabled');
     }
 
     el.onclick = function(e) {
@@ -11314,136 +12190,230 @@ jSuites.toolbar = (function(el, options) {
     return obj;
 });
 
-jSuites.validations = function(value, options) {
-    if (typeof(jSuites.validations[options.type]) === 'function') {
-        return jSuites.validations[options.type](value, options);
-    }
-    return null;
-};
+jSuites.validations = (function() {
+    /**
+     * Options: Object,
+     * Properties:
+     * Constraint,
+     * Reference,
+     * Value
+     */
 
-// Legacy
-jSuites.validations.email = function(data) {
-    var pattern = new RegExp(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
-    return data && pattern.test(data) ? true : false; 
-}
-
-jSuites.validations.required = function(data) {
-    return data.trim() ? true : false;
-}
-
-jSuites.validations.number = function(data) {
-    return jSuites.isNumber(data);
-}
-
-jSuites.validations.login = function(data) {
-    var pattern = new RegExp(/^[a-zA-Z0-9\_\-\.\s+]+$/);
-    return data && pattern.test(data) ? true : false;
-}
-
-/**
- * Options: Object,
- * Properties: 
- * Constraint,
- * Reference,
- * Value
- */
-
-var valueComparisons = function(data, options) {
-    if (options.constraint === '=') {
-        return data === options.reference;
-    }
-    if (options.constraint === '<') {
-        return data < options.reference;
-    }
-    if (options.constraint === '<=') {
-        return data <= options.reference;
-    }
-    if (options.constraint === '>') {
-        return data > options.reference;
-    }
-    if (options.constraint === '>=') {
-        return data >= options.reference;
-    }
-    if (options.constraint === 'between') {
-        return data >= options.reference[0] && data <= options.reference[1];
-    }
-    if (options.constraint === 'not between') {
-        return data < options.reference[0] || data > options.reference[1];
+    var isNumeric = function(num) {
+        return !isNaN(num) && num !== null && num !== '';
     }
 
-    return null;
-}
-
-jSuites.validations.number = function(data, options) {
-    if (!jSuites.isNumeric(data)) {
-        return false;
+    var numberCriterias = {
+        'between': function(value, range) {
+            return value >= range[0] && value <= range[1];
+        },
+        'not between': function(value, range) {
+            return value < range[0] || value > range[1];
+        },
+        '<': function(value, range) {
+            return value < range[0];
+        },
+        '<=': function(value, range) {
+            return value <= range[0];
+        },
+        '>': function(value, range) {
+            return value > range[0];
+        },
+        '>=': function(value, range) {
+            return value >= range[0];
+        },
+        '=': function(value, range) {
+            return value == range[0];
+        },
+        '!=': function(value, range) {
+            return value != range[0];
+        },
     }
 
-    if (options === undefined || options.constraint === undefined) {
-        return true;
+    var dateCriterias = {
+        'valid date': function() {
+            return true;
+        },
+        '=': function(value, range) {
+            return value === range[0];
+        },
+        '<': function(value, range) {
+            return value < range[0];
+        },
+        '<=': function(value, range) {
+            return value <= range[0];
+        },
+        '>': function(value, range) {
+            return value > range[0];
+        },
+        '>=': function(value, range) {
+            return value >= range[0];
+        },
+        'between': function(value, range) {
+            return value >= range[0] && value <= range[1];
+        },
+        'not between': function(value, range) {
+            return value < range[0] || value > range[1];
+        },
     }
 
-    return valueComparisons(data, options);
-}
+    var textCriterias = {
+        'contains': function(value, range) {
+            return value.includes(range[0]);
+        },
+        'not contains': function(value, range) {
+            return !value.includes(range[0]);
+        },
+        'begins with': function(value, range) {
+            return value.startsWith(range[0]);
+        },
+        'ends with': function(value, range) {
+            return value.endsWith(range[0]);
+        },
+        '=': function(value, range) {
+            return value === range[0];
+        },
+        'valid email': function(value) {
+            var pattern = new RegExp(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
 
-jSuites.validations.date = function(data, options) {
-    if (new Date(data) == 'Invalid Date') {
-        return false;
+            return pattern.test(value);
+        },
+        'valid url': function(value) {
+            var pattern = new RegExp(/(((https?:\/\/)|(www\.))[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|]+)/ig);
+
+            return pattern.test(value);
+        },
     }
 
-    if (options === undefined || options.constraint === undefined) {
-        return true;
-    } else if (typeof(options) === 'object') {
-        data = new Date(data).getTime();
+    // Component router
+    var component = function(value, options) {
+        if (typeof(component[options.type]) === 'function') {
+            if (options.allowBlank && value === '') {
+                return true;
+            }
 
-        if (Array.isArray(options.reference)) {
-            options.reference = options.reference.map(function(reference) {
-                return new Date(reference).getTime();
-            });
-        } else {
-            options.reference = new Date(options.reference).getTime();
+            return component[options.type](value, options);
         }
-
-        return valueComparisons(data, options);
+        return null;
     }
-    return null;
-}
-
-jSuites.validations.itemList = function(data, options) {
-    return options.reference.some(function(reference) {
-        return reference == data;
-    });
-}
-
-jSuites.validations.text = function(data, options) {
-    if (typeof data !== 'string') {
-        return false;
-    }
-
-    if (options === undefined || options.constraint === undefined) {
-        return true;
-    }
-    if (options.constraint === '=') {
-        return data === options.reference;
-    }
-    if (options.constraint === 'contains') {
-        return data.includes(options.reference);
-    }
-    if (options.constraint === 'not contain') {
-        return !data.includes(options.reference);
-    }
-    if (options.constraint === 'email') {
-        return jSuites.validations.email(data);
-    }
-    if (options.constraint === 'url') {
+    
+    component.url = function() {
         var pattern = new RegExp(/(((https?:\/\/)|(www\.))[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|]+)/ig);
         return pattern.test(data) ? true : false;
     }
-    return null;
-}
 
-jSuites.validations.constraints = function() {
-}
+    component.email = function(data) {
+        var pattern = new RegExp(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+        return data && pattern.test(data) ? true : false; 
+    }
+    
+    component.required = function(data) {
+        return data.trim() ? true : false;
+    }
+
+    component.exist = function(data, options) {
+        return !!data.toString();
+    }
+
+    component['not exist'] = function(data, options) {
+        return !data.toString();
+    }
+
+    component.empty = function(data) {
+        return !data.toString();
+    }
+
+    component.notEmpty = function(data) {
+        return !!data.toString();
+    }
+
+    component.number = function(data, options) {
+       if (! isNumeric(data)) {
+           return false;
+       }
+
+       if (!options || !options.criteria) {
+           return true;
+       }
+
+       if (!numberCriterias[options.criteria]) {
+           return false;
+       }
+
+       var values = options.value.map(function(num) {
+          return parseFloat(num);
+       })
+
+       return numberCriterias[options.criteria](data, values);
+   };
+
+    component.login = function(data) {
+        var pattern = new RegExp(/^[a-zA-Z0-9\_\-\.\s+]+$/);
+        return data && pattern.test(data) ? true : false;
+    }
+
+    component.list = function(data, options) {
+        var dataType = typeof data;
+        if (dataType !== 'string' && dataType !== 'number') {
+            return false;
+        }
+        if (typeof(options.value[0]) === 'string') {
+            var list = options.value[0].split(',');
+        } else {
+            var list = options.value[0];
+        }
+
+        var validOption = list.findIndex(function name(item) {
+            return item == data;
+        });
+
+        return validOption > -1;
+    }
+
+    component.date = function(data, options) {
+        if (new Date(data) == 'Invalid Date') {
+            return false;
+        }
+
+        if (!options || !options.criteria) {
+            return true;
+        }
+
+        if (!dateCriterias[options.criteria]) {
+            return false;
+        }
+
+        var values = options.value.map(function(date) {
+            return new Date(date).getTime();
+        });
+
+        return dateCriterias[options.criteria](new Date(data).getTime(), values);
+    }
+
+    component.text = function(data, options) {
+        if (typeof data !== 'string') {
+            return false;
+        }
+
+        if (!options || !options.criteria) {
+            return true;
+        }
+
+        if (!textCriterias[options.criteria]) {
+            return false;
+        }
+
+        return textCriterias[options.criteria](data, options.value);
+    }
+
+    component.textLength = function(data, options) {
+        data = data.toString();
+
+        return component.number(data.length, options);
+    }
+
+    return component;
+})();
 
 
 
