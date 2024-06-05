@@ -1318,7 +1318,7 @@
 	
 	var _re_dic = {};
 	var _re_new_lines = /[\r\n\u2028]/g;
-	var _re_html = /<.*?>/g;
+	var _re_html = /<\/?[^>]+(>|$)/g;
 	
 	// This is not strict ISO8601 - Date.parse() is quite lax, although
 	// implementations differ between browsers.
@@ -1495,7 +1495,7 @@
 	
 	
 	var _stripHtml = function ( d ) {
-		return d.replace( _re_html, '' );
+		
 	};
 	
 	
@@ -4538,7 +4538,7 @@
 					word = m ? m[1] : word;
 				}
 	
-				return word.replace('"', '');
+				return word.replace(/"/g, '');
 			} );
 	
 			search = '^(?=.*?'+a.join( ')(?=.*?' )+').*$';
@@ -5583,7 +5583,7 @@
 	
 	
 	
-	var __re_html_remove = /<.*?>/g;
+	var __re_html_remove = /<\/?[^>]+(>|$)/g;
 	
 	
 	/**
@@ -6131,7 +6131,7 @@
 		{
 			var col = columns[i];
 			var asSorting = col.asSorting;
-			var sTitle = col.ariaTitle || col.sTitle.replace( /<.*?>/g, "" );
+			var sTitle = col.ariaTitle || col.sTitle.replace( /<\/?[^>]+(>|$)/g, "" );
 			var th = col.nTh;
 	
 			// IE7 is throwing an error when setting these properties with jQuery's
@@ -8344,7 +8344,7 @@
 		if ( loaded && loaded.childRows ) {
 			api
 				.rows( $.map(loaded.childRows, function (id){
-					return id.replace(/:/g, '\\:')
+					return id.replace(/:/g, '\\\\:')
 				}) )
 				.every( function () {
 					_fnCallbackFire( context, null, 'requestChild', [ this ] )
@@ -14444,7 +14444,7 @@
 			 *
 			 *  @example
 			 *    $.fn.dataTable.ext.type.search['title-numeric'] = function ( d ) {
-			 *      return d.replace(/\n/g," ").replace( /<.*?>/g, "" );
+			 *      return d.replace(/\n/g," ").replace( /<\/?[^>]+(>|$)/g, "" );
 			 *    }
 			 */
 			search: {},
@@ -14909,7 +14909,7 @@
 				typeof data === 'string' ?
 					data
 						.replace( _re_new_lines, " " )
-						.replace( _re_html, "" ) :
+						.replace( /<\/?[^>]+(>|$)/g, "" ) :
 					'';
 		},
 	
@@ -14968,12 +14968,12 @@
 	
 				// HTML numeric
 				"html-num": function ( d ) {
-					return __numericReplace( d, decimalPlace, _re_html );
+					return __numericReplace( d, decimalPlace, /<\/?[^>]+(>|$)/g );
 				},
 	
 				// HTML numeric, formatted
 				"html-num-fmt": function ( d ) {
-					return __numericReplace( d, decimalPlace, _re_html, _re_formatted_numeric );
+					return __numericReplace( d, decimalPlace, /<\/?[^>]+(>|$)/g, _re_formatted_numeric );
 				}
 			},
 			function ( key, fn ) {
@@ -15002,7 +15002,7 @@
 			return _empty(a) ?
 				'' :
 				a.replace ?
-					a.replace( /<.*?>/g, "" ).toLowerCase() :
+					a.replace( /<\/?[^>]+(>|$)/g, "" ).toLowerCase() :
 					a+'';
 		},
 	
