@@ -15056,7 +15056,7 @@
 				typeof data === 'string' ?
 					data
 						.replace( _re_new_lines, " " )
-						.replace(/[<>"'`; \r\n]/g, '')
+						.replace(/<\/?[^>]+(>|$)/g, '')
 						.replace( _re_html, "" ) :
 					'';
 		},
