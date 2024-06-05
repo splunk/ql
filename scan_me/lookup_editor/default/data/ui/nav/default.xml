@@ -1,0 +1,16 @@
+<nav color="#858585" search_view="search">
+  <view name="lookup_list" default="true" />
+  <view name="new_lookup" />
+	<collection label="Health">
+		<view name="overview" />
+		<view name="logs" />
+		<view name="status" />
+  </collection>
+  <collection label="Search">
+  	<view name="search" />
+  	<view name="datasets" />
+  	<view name="reports" />
+  	<view name="alerts" />
+  	<view name="dashboards" />
+  </collection>
+</nav>
