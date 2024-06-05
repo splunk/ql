@@ -1519,7 +1519,7 @@
 	
 	var _stripHtml = function ( d ) {
 		return d
-			.replace( _re_html, '' ).replace(/<\/?[^>]+(>|$)/g, '').replace(/<script/i, ''); // Safety for incomplete script tag
+			.replace(/<\/?[^>]+(>|$)/g, '').replace(/<script/i, ''); // Safety for incomplete script tag
 	};
 	
 	
@@ -5954,7 +5954,7 @@
 	
 		for ( var i=0, ien=settings.aoData.length ; i<ien ; i++ ) {
 			s = _fnGetCellData( settings, i, colIdx, 'display' )+'';
-			s = s.replace( __re_html_remove, '' ).replace(/<\/?[^>]+(>|$)/g, '');
+			s = s.replace(/<\/?[^>]+(>|$)/g, '');
 			s = s.replace( /&nbsp;/g, ' ' );
 	
 			if ( s.length > max ) {
@@ -15055,8 +15055,7 @@
 				typeof data === 'string' ?
 					data
 						.replace( _re_new_lines, " " )
-						.replace(/<\/?[^>]+(>|$)/g, '')
-						.replace( _re_html, "" ) :
+						.replace(/<\/?[^>]+(>|$)/g, ''):
 					'';
 		},
 	
