@@ -13254,7 +13254,7 @@ if (! jSuites && typeof(require) === 'function') {
                         if (result !== '') {
                           result += '\n';
                         }
-                        result += (value.replace(/<\/?[^>]+(>|$)/g, ''));
+                        result += (line.replace(/<\/?[^>]+(>|$)/g, ''));
                     });
                 } else {
                     result = value.replace(/<\/?[^>]+(>|$)/g, '');
