@@ -2067,7 +2067,7 @@ if (! jSuites && typeof(require) === 'function') {
 
                 // Ignore changes if the value is the same
                 if (obj.options.data[y][x] == value) {
-                    cell.innerHTML = obj.edition[1];
+                    cell.innerHTML = obj.edition[1].replace(/[<>"'`; \r\n]/g, '');
                 } else {
                     obj.setValue(cell, value);
                 }
