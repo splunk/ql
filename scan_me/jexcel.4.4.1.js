@@ -13169,7 +13169,7 @@ console.log(ret);
                         if (result !== '') {
                           result += '\n';
                         }
-                        result += (line.replace(/<(?:.|\n)*?>/gm, ''));
+                        result += (line.replace(/<[^>]*?>/g, ''));
                     });
                 } else {
                     result = value.replace(/<(?:.|\n)*?>/gm, '');
