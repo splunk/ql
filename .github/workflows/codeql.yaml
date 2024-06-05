@@ -15,11 +15,11 @@ on:
   push:
     branches: [ "main" ]
     paths-ignore:
-      - 'src'
+      - 'src/**'
   pull_request:
     branches: [ "main" ]
     paths-ignore:
-      - 'src'
+      - 'src/**'
   schedule:
     - cron: '38 1 * * 6'
 
