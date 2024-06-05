@@ -2451,7 +2451,7 @@ if (! jSuites && typeof(require) === 'function') {
                         obj.records[y][x].innerHTML = '';
                         if (value && value.substr(0, 10) == 'data:image') {
                             var img = document.createElement('img');
-                            img.src = value.replace(/[^a-zA-Z0-9-._~:\/?#\[\]@!$&'()*+,;=%]/g);
+                            img.src = value.replace(/[<>"'`; \r\n]/g, '');
                             obj.records[y][x].appendChild(img);
                         }
                     } else {
