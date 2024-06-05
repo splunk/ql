@@ -1,0 +1,11 @@
+/* This prevents the header for appearing over the dialogs */
+.TableEditorView > .jexcel_content > .jexcel > thead > tr > td
+{
+    z-index: 1000;
+}
+
+.jexcel_search {
+    height: 32px;
+    width: 180px;
+    margin-right: 20px;
+}
