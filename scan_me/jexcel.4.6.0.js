@@ -13254,10 +13254,10 @@ if (! jSuites && typeof(require) === 'function') {
                         if (result !== '') {
                           result += '\n';
                         }
-                        result += (line.replace(/<(?:.|\n)*?>/gm, ''));
+                        result += (line.replace(/<[^>]*>/g, ''));
                     });
                 } else {
-                    result = value.replace(/<(?:.|\n)*?>/gm, '');
+                    result = value.replace(/<[^>]*>/g, '');
                 }
             }
     
