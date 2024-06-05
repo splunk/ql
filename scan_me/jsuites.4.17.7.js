@@ -5589,17 +5589,52 @@ jSuites.editor = (function(el, options) {
         s.addRange(r)
     }
 
+    // I would prefer to use DOMPurify, but I'm lazy
     var filter = function(data) {
         if (data) {
+            // Remove HTML comments
             data = data.replace(new RegExp('<!--(.*?)-->', 'gsi'), '');
+    
+            // Create a temporary DOM element to work with
+            var tempDiv = document.createElement('div');
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(data, 'text/html');
+    
+            // Remove any potentially dangerous elements
+            var dangerousTags = ['script', 'iframe', 'object', 'embed', 'link', 'style'];
+            dangerousTags.forEach(function(tag) {
+                var elements = doc.getElementsByTagName(tag);
+                while (elements[0]) {
+                    elements[0].parentNode.removeChild(elements[0]);
+                }
+            });
+    
+            // Remove any potentially dangerous attributes
+            var dangerousAttrs = ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'];
+            var allElements = doc.getElementsByTagName('*');
+            for (var i = 0; i < allElements.length; i++) {
+                var element = allElements[i];
+                dangerousAttrs.forEach(function(attr) {
+                    if (element.hasAttribute(attr)) {
+                        element.removeAttribute(attr);
+                    }
+                });
+            }
+    
+            // Set the sanitized inner HTML to the temporary div
+            tempDiv.innerHTML = doc.body.innerHTML;
+    
+            // Parse the sanitized content
+            var sanitized = tempDiv.innerHTML;
+            var sanitizedDoc = parser.parseFromString(sanitized, "text/html");
+            parse(sanitizedDoc);
+    
+            // Create a span to return the sanitized content
+            var span = document.createElement('span');
+            span.innerHTML = sanitizedDoc.body.innerHTML;
+            return span;
         }
-        var parser = new DOMParser();
-        var sanitized = data;
-        var d = parser.parseFromString(sanitized, "text/html");
-        parse(d);
-        var span = document.createElement('span');
-        span.innerHTML = d.firstChild.innerHTML;
-        return span;
+        return null; // Return null or an appropriate value if data is null or empty
     }
 
     var editorPaste = function(e) {
