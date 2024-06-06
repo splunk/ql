@@ -7542,7 +7542,7 @@ jSuites.mask = (function() {
         // Data tokens
         datetime: [ 'YYYY', 'YYY', 'YY', 'MMMMM', 'MMMM', 'MMM', 'MM', 'DDDDD', 'DDDD', 'DDD', 'DD', 'DY', 'DAY', 'WD', 'D', 'Q', 'MONTH', 'MON', 'HH24', 'HH12', 'HH', '\\[H\\]', 'H', 'AM/PM', 'PM', 'AM', 'MI', 'SS', 'MS', 'Y', 'M' ],
         // Other
-        general: [ 'A', '0', '[0-9a-zA-Z\$]+', '.']
+        general: [ 'A', '0', '[0-9a-zA-Z$]+', '.']
     }
 
     var getDate = function() {
