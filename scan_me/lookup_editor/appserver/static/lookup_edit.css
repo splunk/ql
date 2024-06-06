@@ -1,0 +1,54 @@
+/*
+ * Hide the header since we are going to show our own header
+ */
+.dashboard-header{
+	display: none;
+}
+
+/*
+ * Fix to make styling look more like new Splunk.
+ */
+#row1 > #panel1 > .dashboard-panel{
+ 	background-color: transparent;
+}
+ 
+.dashboard-body{
+ 	padding: 0px;
+}
+
+.panel-body.html{
+	padding: 0px !important;
+}
+
+td:first-child{
+	width: 16px;
+}
+
+.dashboard-header, #list_link, .bottom_controls{
+	margin-left: 16px;
+	margin-right: 16px;
+}
+
+/*
+ * Set outline color so that it doesn't turn blue (which looks kinda weird)
+ */
+#lookup-table:focus{
+	outline-color: #f2f4f5;
+}
+
+/* Style the header */
+.lookup-edit-view .lookup-header{
+	display: inline-block;
+}
+
+.lookup-edit-view .lookup-header h2:first-child{
+	margin: 10px 4px 0 16px;
+}
+
+.lookup-edit-view .lookup-header h2{
+	display: inline-block;
+	font-size: 24px;
+	margin: 10px 0 0 0;
+	padding: 0;
+    font-weight: 200;
+}
