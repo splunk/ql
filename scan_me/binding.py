@@ -612,6 +612,7 @@ class Context:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if self.scheme == "https":
             context = ssl.create_default_context()
+            context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
             sock = context.wrap_socket(sock, server_hostname=self.host)
         sock.connect((socket.gethostbyname(self.host), self.port))
         return sock
