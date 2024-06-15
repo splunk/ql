@@ -31,3 +31,22 @@ export = system
 [views]
 access = read : [ * ], write : [ admin ]
 export = none
+
+#### Restrict access to specific views
+[views/automation_analytics]
+access = read : [ admin, sc_admin, splunk_app_soar, splunk_app_soar_dashboards ], write : [ admin, sc_admin ]
+
+[views/action_run_search]
+access = read : [ admin, sc_admin, splunk_app_soar, splunk_app_soar_dashboards ], write : [ admin, sc_admin ]
+
+[views/soar_case_insights]
+access = read : [ admin, sc_admin, splunk_app_soar, splunk_app_soar_dashboards ], write : [ admin, sc_admin ]
+
+[views/case_search]
+access = read : [ admin, sc_admin, splunk_app_soar, splunk_app_soar_dashboards ], write : [ admin, sc_admin ]
+
+[views/soar_cases_performance]
+access = read : [ admin, sc_admin, splunk_app_soar, splunk_app_soar_dashboards ], write : [ admin, sc_admin ]
+
+[views/configurations]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]

@@ -51,6 +51,7 @@ class SOARClient():
     server_url = None
     auth_token = None
     verify = True
+    allow_redirects = False
 
     def __init__(self, server_url, auth_token):
         self.server_url = server_url
@@ -75,7 +76,14 @@ class SOARClient():
             "ph-auth-token": self.auth_token
         }
 
-        return requests.request(method=method, url=url, headers=headers, verify=self.verify, **kwargs)
+        return requests.request(
+            method=method,
+            url=url,
+            headers=headers,
+            verify=self.verify,
+            allow_redirects=self.allow_redirects,
+            **kwargs
+        )
 
     async def read_url(self, session, url, record):
         async with session.get(url) as resp:

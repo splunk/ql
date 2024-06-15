@@ -1,37 +1,46 @@
 # Copyright (C) 2023-2024 Splunk Inc. All Rights Reserved.
 
 import json
-import os
-from traceback import format_exc
-import requests
 import logging
+import os
 import sys
-from urllib.parse import quote, unquote
+from traceback import format_exc
+from urllib.parse import quote, unquote, urlparse, ParseResult
 
+import requests
 import splunk
 import splunk.rest
-from splunk.persistconn.application import PersistentServerConnectionApplication
 from splunk.clilib.bundle_paths import make_splunkhome_path
+from splunk.persistconn.application import PersistentServerConnectionApplication
 
 APP_HOME_DIR = make_splunkhome_path(["etc", "apps", "splunk_app_soar"])
 sys.path.insert(0, os.path.join(APP_HOME_DIR, "bin"))
 
-from soar_utils import setup_logging
+from soar_utils import (
+    setup_logging,
+    make_request_and_handle_redirect_helper,
+    RedirectDetectedException,
+)
 from soar_imports import (
     APP_NAME,
-    SOAR_CONF,
     SOAR_CONF_PROPS,
-    SOAR_PASSWORDS_CONF,
-    PHANTOM_VERIFY_SERVER_URL_PH_USER,
-    PHANTOM_VERIFY_SERVER_URL_ASSET,
     GLOBAL_ACCOUNT,
-    INPUT_ENDPOINT
+    PHANTOM_VERIFY_SERVER_URL_USER_SETTINGS,
+    INPUT_ENDPOINT,
+    REDIRECT_DETECTED_MSG,
+    SERVER_MUST_BE_HTTPS_MSG,
+    INVALID_SERVER_URL,
+    INVALID_PROXY_URL,
+    FAILED_TO_VERIFY_SERVER_MSG,
 )
 
 POST_REQUIRED_FIELDS = ["name", "server", "password"]  # user is optional
 
-CERT_FILE_LOCATION_DEFAULT = os.path.join(os.environ['SPLUNK_HOME'], 'etc', 'apps', APP_NAME, 'default', 'cert_bundle.pem')
+CERT_FILE_LOCATION_DEFAULT = os.path.join(
+    os.environ['SPLUNK_HOME'], 'etc', 'apps', APP_NAME, 'default', 'cert_bundle.pem'
+)
 CERT_FILE_LOCATION_LOCAL = os.path.join(os.environ['SPLUNK_HOME'], 'etc', 'apps', APP_NAME, 'local', 'cert_bundle.pem')
+
 
 class SoarConfigRESTHandler(PersistentServerConnectionApplication):
     def __init__(self, command_line, command_arg):
@@ -47,6 +56,7 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
         self.proxy = None
         self.verify_certs = None
         self.input_id = None
+        self.allow_redirects = False
         PersistentServerConnectionApplication.__init__(self)
 
     def _set_proxy(self, proxy=None):
@@ -59,6 +69,16 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
                 self.proxy = {"https": proxy}
         if isinstance(proxy, str):
             self.proxy = {"https": proxy}
+
+    def _is_proxy_url_valid(self):
+        # Proxy is optional
+        if not self.proxy:
+            return True
+        if not self.proxy.get('https'):
+            return True
+        # Question marks are not allowed in proxy URL for security
+        # reasons . More details in VULN-15009 ticket
+        return all(self._is_server_url_valid(proxy_url.lower()) for proxy_url in self.proxy.values())
 
     def get_forms_args_as_dict(self, form_args):
         if type(form_args) == str:
@@ -106,7 +126,6 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
             self.log.info(f"Log level: INFO (default)")
             # No custom log level set
 
-
         # Retrieve verify_certs flag from soar.conf
         path = quote(f"{SOAR_CONF_PROPS}/verify_certs/value")
         success, status, content = self.splunk_get(path)
@@ -137,14 +156,14 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
     @param name: config id
     @param proxy (optional)
     """
+
     def handle_POST(self):
         self.log.info("POST server config")
         # Make sure all required params present
         payload_keys = self.payload.keys()
 
-        for item in POST_REQUIRED_FIELDS:
-            if item not in payload_keys:
-                return {"message": "Not all required fields present in request", "status": 400}
+        if any(required_field not in payload_keys for required_field in POST_REQUIRED_FIELDS):
+            return {"message": "Not all required fields present in request", "status": 400}
 
         # Verify server connection
         valid, message = self.verify_server()
@@ -154,22 +173,31 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
             roles = message.get("roles")
             if "Observer" not in roles:
                 self.log.error("Observer role missing from roles")
-                return {"error": "User needs 'observer' role in SOAR.", "status_code": 403, "status": 200}
+                return {"error": "User needs 'observer' role in SOAR.", "status": 200}
             if self.custom_name in [None, ""]:
                 self.custom_name = f"{self.username} ({self.server})"
         else:
-            if "Max retries exceeded with url" in message:
-                return {"error": message, "status": 200}
-            error_message = 'Invalid server information provided.'
-            if "Server must be https":
-                return {"error": f"{error_message} SOAR only supports https, please update your server config.", "status": 200}
-            if "Failed to parse" in message:
-                return {"error": f"{error_message} {message}", "status": 200}
-            if "invalid token from" in message:
+            default_error_message = "Invalid server information provided."
+
+            if REDIRECT_DETECTED_MSG in message:
                 return {"error": f"Failed to communicate with server: {message}", "status": 200}
+            if INVALID_SERVER_URL in message:
+                return {"error": f"{message}. Please update your server config.", "status": 200}
+            if INVALID_PROXY_URL in message:
+                return {"error": f"{message}. Please update your server config.", "status": 200}
+            if FAILED_TO_VERIFY_SERVER_MSG in message:
+                return {
+                    "error": f'{message}. Note: Make sure automation user has "observer" role.',
+                    "status": 200,
+                }
+            if SERVER_MUST_BE_HTTPS_MSG in message:
+                return {
+                    "error": f"{default_error_message} SOAR only supports https, please update your server config.",
+                    "status": 200,
+                }
+
             return {
-                "error": f'{error_message} Note: Make sure automation user has "observer" role.',
-                "status_code": 403,
+                "error": f'{default_error_message} Note: Make sure automation user has "observer" role.',
                 "status": 200,
             }
 
@@ -188,7 +216,7 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
             pass
 
         # Post to splunk_app_soar_account.conf
-        # Post proxy settings to 
+        # Post proxy settings to
         if stanza_exists_soar_conf is True:
             self.log.info(f"Updating [{self.config_id}] in splunk_app_soar_account.conf")
             success_ga_conf, status_ga_conf, content_ga_conf = self.splunk_post(
@@ -212,6 +240,7 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
     If an audit input config exists for the given global_account_path (SOAR server),
         the audit input config will also be deleted
     """
+
     def handle_DELETE(self):
         # Delete from splunk_app_soar_account.conf
         global_account_path = quote(f"{GLOBAL_ACCOUNT}/{self.path_info}")
@@ -240,7 +269,7 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
             "server": self.server,
             "username": self.username,
             "soar_proxy": self.payload.get("soar_proxy"),
-            "password": self.auth_token
+            "password": self.auth_token,
         }
         return config
 
@@ -248,61 +277,181 @@ class SoarConfigRESTHandler(PersistentServerConnectionApplication):
         success, status, content = self.splunk_get(path)
         return success
 
-    def verify_server(self):
-        self.log.info("Verifying server...")
+    def _fallback_verify_server(self, username):
+        """
+        DEPRECATED
+        Fallback to the previous server verification (username, roles pull).
+        This is only for cases, when Splunk SOAR wasn't updated to 6.2.2 yet.
+
+        Uses old method of checking username and roles using the ph_user endpoint
+        listing with filtering by using the auth key (which is unsafe and should be
+        stopped ASAP).
+
+        Keep in mind that this method doesn't validate server and proxy URLs for
+        security vulnerabilities so make sure that this validation is performed
+        before calling this method.
+        """
+        self.log.warning(
+            "Deprecation Warning: "
+            "You are still using old method of Splunk SOAR server verification. "
+            "A new method of verification will be available starting with Splunk SOAR 6.2.2. "
+            "Make sure to update your Splunk SOAR server."
+        )
+
+        # unsafe to use and the main reason for removal of this implementation
+        PHANTOM_VERIFY_SERVER_URL_ASSET = "{server}/rest/asset?_filter_token__key='{auth_token}'"
+        PHANTOM_VERIFY_SERVER_URL_PH_USER = (
+            "{server}/rest/ph_user?include_automation=true&_filter_username='{username}'"
+        )
+
         auth_headers = {"ph-auth-token": self.auth_token}
         response_json = None
 
-        if not self.server.lower().startswith('https://'):
-            return False, "Server must be https"
-
         try:
             base_uri = PHANTOM_VERIFY_SERVER_URL_PH_USER.format(
-                server=self.server, auth_token=quote(self.auth_token)
+                server=self.server, username=username
             )
-            response = requests.get(
-                base_uri, headers=auth_headers, verify=self.verify_certs, proxies=self.proxy, timeout=15
+            response = make_request_and_handle_redirect_helper(
+                helper=self,
+                http_method="GET",
+                url=base_uri,
+                auth_headers=auth_headers,
             )
+        except RedirectDetectedException:
+            return False, REDIRECT_DETECTED_MSG
         except requests.exceptions.ConnectionError as e:
             url_encoded_token = (
                 self.auth_token.replace("=", "%3D").replace("+", "%2B").replace("&", "%26")
             )
-            message = str(e).replace(url_encoded_token, "<token>")
-            self.log.error(f"Failed to verify SOAR server: {message}")
-            return False, message
+            redacted_exception = str(e).replace(url_encoded_token, "<token>")
+            self.log.error(FAILED_TO_VERIFY_SERVER_MSG)
+            self.log.debug(
+                f"A ConnectionError has occurred when trying to verify SOAR "
+                f"server: {redacted_exception}"
+            )
+            return False, FAILED_TO_VERIFY_SERVER_MSG
         except Exception as e:
-            return False, str(e)
+            self.log.error(FAILED_TO_VERIFY_SERVER_MSG)
+            self.log.debug(
+                f"An Exception has occurred when trying to verify SOAR "
+                f"server: {e}"
+            )
+            return False, FAILED_TO_VERIFY_SERVER_MSG
         try:
             if response.status_code != 200:
-                message = "Failed"
                 try:
-                    message = response.json().get("message", message)
+                    message = response.json().get("message", FAILED_TO_VERIFY_SERVER_MSG)
                 except Exception:
-                    pass
-                # raise Exception(message)
+                    message = FAILED_TO_VERIFY_SERVER_MSG
                 self.log.debug(f"Status Code: {response.status_code}. Error: {message}")
-                return False, message
+                return False, FAILED_TO_VERIFY_SERVER_MSG
+
             response_json = response.json()
             if int(response_json["count"]) < 1:
                 raise Exception("Token not found")
+
         except Exception:
             base_uri = PHANTOM_VERIFY_SERVER_URL_ASSET.format(
                 server=self.server, auth_token=quote(self.auth_token)
             )
-            response = requests.get(
-                base_uri, headers=auth_headers, verify=self.verify_certs, proxies=self.proxy, timeout=15
-            )
+            try:
+                response = make_request_and_handle_redirect_helper(
+                    helper=self,
+                    http_method="GET",
+                    url=base_uri,
+                    auth_headers=auth_headers,
+                )
+            except RedirectDetectedException:
+                return False, REDIRECT_DETECTED_MSG
+
             if response.status_code != 200:
-                raise
-            response_json = response.json()
-            if int(response_json["count"]) < 1:
-                return False, None
+                self.log.debug(f"Status code for asset URL: {response.status_code}")
+                return False, FAILED_TO_VERIFY_SERVER_MSG
+            try:
+                response_json = response.json()
+                self.log.debug(f"Response for asset URL: {response_json}")
+                if int(response_json["count"]) < 1:
+                    return False, FAILED_TO_VERIFY_SERVER_MSG
+            except Exception as ex:
+                self.log.debug(f"Cannot parse response for asset URL: {ex}")
+                return False, FAILED_TO_VERIFY_SERVER_MSG
 
         return_json = {
-            "username": response_json.get("data", [])[0].get("username"),
+            "username": username,
             "roles": response_json.get("data", [])[0].get("roles"),
         }
         return True, return_json
+
+    def verify_server(self):
+        self.log.info("Verifying server...")
+        auth_headers = {"ph-auth-token": self.auth_token}
+
+        # Validating server and proxy URLs:
+        if not self.server.lower().startswith('https://'):
+            return False, SERVER_MUST_BE_HTTPS_MSG
+        if not self._is_server_url_valid(self.server.lower()):
+            return False, INVALID_SERVER_URL
+        if not self._is_proxy_url_valid():
+            return False, INVALID_PROXY_URL
+
+        base_uri = PHANTOM_VERIFY_SERVER_URL_USER_SETTINGS.format(
+            server=self.server
+        )
+        try:
+            response = make_request_and_handle_redirect_helper(
+                helper=self,
+                http_method="GET",
+                url=base_uri,
+                auth_headers=auth_headers,
+            )
+        except RedirectDetectedException:
+            return False, REDIRECT_DETECTED_MSG
+        except Exception as e:
+            self.log.error(FAILED_TO_VERIFY_SERVER_MSG)
+            self.log.debug(
+                f"An exception has occurred when trying to verify SOAR "
+                f"server: {e}"
+            )
+            return False, FAILED_TO_VERIFY_SERVER_MSG
+
+        try:
+            response_json = response.json()
+            if response.status_code != 200:
+                message = response_json.get("message", FAILED_TO_VERIFY_SERVER_MSG)
+                self.log.debug(f"Status Code: {response.status_code}. Error: {message}")
+                return False, FAILED_TO_VERIFY_SERVER_MSG
+        except json.JSONDecodeError as e:  # error in parsing JSON data from response
+            self.log.debug(f"Status Code: {response.status_code}. Error: {e}")
+            return False, FAILED_TO_VERIFY_SERVER_MSG
+
+        username = response_json.get("username")
+        roles = response_json.get("roles")
+
+        # Fallback to the deprecated method of roles checking
+        if roles is None:
+            self.log.debug(
+                "'roles' absent in response from the SOAR server. Falling "
+                "back to the deprecated method of verifying server"
+            )
+            return self._fallback_verify_server(username)
+
+        return True, {
+            "username": username,
+            "roles": roles,
+        }
+
+    def _is_server_url_valid(self, url: str) -> bool:
+        """
+        Validates server URL. The URL must consist only of 'https://IP:PORT'.
+        Any other element like '?', ';', '/' or '#' creates a security
+        vulnerability as it allows the user to manipulate server path.
+        More details in VULN-15009 ticket.
+        """
+        parsed_url: ParseResult = urlparse(url)
+        # Valid URL can't have 'path', 'params', 'query' and 'fragment'
+        # components, so it must consist only of 'scheme' and 'netloc'
+        allowed_url: str = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        return url == allowed_url
 
     def splunk_post(self, path, params=None):
         if params is None:

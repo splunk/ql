@@ -5,7 +5,7 @@
     "id": {
       "group": null,
       "name": "splunk_app_soar",
-      "version": "1.0.57"
+      "version": "1.0.67"
     },
     "author": [
       {

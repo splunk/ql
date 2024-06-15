@@ -2,6 +2,7 @@
 
 APP_NAME = "splunk_app_soar"
 
+# Endpoints
 SOAR_CONF = f"/servicesNS/nobody/{APP_NAME}/configs/conf-soar"
 INPUTS_CONF = f"/servicesNS/nobody/{APP_NAME}/configs/conf-inputs"
 SOAR_PASSWORDS_CONF = f"/servicesNS/nobody/{APP_NAME}/storage/passwords"
@@ -12,7 +13,15 @@ GLOBAL_ACCOUNT = f"/servicesNS/nobody/{APP_NAME}/ta_splunk_app_soar_account"
 INPUT_ENDPOINT = f"/servicesNS/nobody/{APP_NAME}/ta_splunk_app_soar_sas_audit"
 
 # Phantom/SOAR REST endpoints
-PHANTOM_VERIFY_SERVER_URL_PH_USER = (
-    "{server}/rest/ph_user?include_automation=true&_filter_token__key='{auth_token}'"
+PHANTOM_VERIFY_SERVER_URL_USER_SETTINGS = (
+    "{server}/rest/user_settings"
 )
-PHANTOM_VERIFY_SERVER_URL_ASSET = "{server}/rest/asset?_filter_token__key='{auth_token}'"
+
+# Common messages:
+REDIRECT_DETECTED_MSG = (
+    "HTTP redirect has been detected and redirects are disabled for security reasons."
+)
+SERVER_MUST_BE_HTTPS_MSG = "Server must be https"
+INVALID_SERVER_URL = "Invalid SOAR server URL"
+INVALID_PROXY_URL = "Invalid proxy URL"
+FAILED_TO_VERIFY_SERVER_MSG = "Failed to verify SOAR server"

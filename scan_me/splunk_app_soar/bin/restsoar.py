@@ -6,7 +6,8 @@ import time
 from soar import fetch_soar_config, fetch_soar_pass, SOARClient
 from soar_utils import setup_logging
 
-from soar_imports import APP_NAME
+from soar_imports import APP_NAME, REDIRECT_DETECTED_MSG
+
 splunkhome = os.environ['SPLUNK_HOME']
 sys.path.append(os.path.join(splunkhome, 'etc', 'apps', APP_NAME, 'lib'))
 
@@ -41,6 +42,12 @@ class RestSOARCommand(GeneratingCommand):
         soar_client = SOARClient(base_server, soar_token)
 
         res = soar_client.make_request(self.endpoint)
+
+        if res.is_redirect:
+            msg = f"Failed to fetch results. {REDIRECT_DETECTED_MSG}"
+            self.log.error(msg)
+            yield self.gen_record(_time=time.time(), _raw={'failed': True, 'message': msg})
+            return
 
         res_json = res.json()
         self.log.info("REST response: " + json.dumps(res_json))

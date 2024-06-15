@@ -10,6 +10,9 @@ import logging
 from splunk.clilib.bundle_paths import make_splunkhome_path
 from splunk import setupSplunkLogger, ResourceNotFound
 import splunk.rest as rest
+import requests
+
+from soar_imports import REDIRECT_DETECTED_MSG
 
 
 def setup_logging(
@@ -39,9 +42,7 @@ def setup_logging(
         # Logger is singleton so if logger is already defined it will return old handler
         logger = logging.getLogger(logger_name)
 
-    logger.propagate = (
-        is_propagate  # Prevent the log messages from being duplicated in the python.log file
-    )
+    logger.propagate = is_propagate  # Prevent the log messages from being duplicated in the python.log file
     logger.setLevel(level)
 
     # If handlers is already defined then do not create new handler, this way we can avoid file opening again
@@ -78,6 +79,7 @@ def setup_logging(
 
     return logger
 
+
 def rest_helper(helper, method, path, payload=None):
     if payload is None:
         payload = {}
@@ -96,16 +98,60 @@ def rest_helper(helper, method, path, payload=None):
     except Exception as e:
         helper.log.exception(e)
         raise e
-    
+
     try:
-        contents_json = json.loads(contents.decode('utf-8'))
+        contents_json = json.loads(contents.decode("utf-8"))
     except Exception as e:
-        helper.log.error(f"An exception occurred during deserialization of request response to {path}: {e}")
+        helper.log.error(
+            f"An exception occurred during deserialization of request response to {path}: {e}"
+        )
         raise e
     return response, contents_json
+
 
 def pretty_form_map(helper, form_data):
     try:
         return form_data[0][0]
     except Exception:
         return form_data
+
+
+class RedirectDetectedException(Exception):
+    pass
+
+
+def make_request_and_handle_redirect_helper(
+    helper, http_method, url, auth_headers, payload=None
+):
+    """
+    Helper function for making requests and handling redirects. The entire
+    logic of handling redirects should be encapsulated in this function.
+
+    At this point, redirects are not allowed and will raise
+    RedirectDetectedException. Handling such situations can be done by
+    try-catching this exception.
+
+    @param helper: Reference to the object using this function.
+    @param http_method: HTTP method to use.
+    @param url: URL to call.
+    @param auth_headers: Authorization headers to use.
+    @param payload: Data to send in the Request body.
+    @return: Response object
+    """
+    response = requests.request(
+        method=http_method,
+        url=url,
+        headers=auth_headers,
+        verify=helper.verify_certs,
+        proxies=helper.proxy,
+        timeout=15,
+        allow_redirects=helper.allow_redirects,
+        data=payload,
+    )
+    if response.is_redirect:
+        helper.log.debug(
+            f"Status Code: {response.status_code}. Error: " f"{REDIRECT_DETECTED_MSG}"
+        )
+        raise RedirectDetectedException(REDIRECT_DETECTED_MSG)
+
+    return response
