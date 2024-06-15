@@ -1,4 +1,0 @@
-<?xml version="1.0"?>
-<view template="splunk_app_soar:/templates/configurations.html" type="html">
-	<label>Configurations</label>
-</view>
