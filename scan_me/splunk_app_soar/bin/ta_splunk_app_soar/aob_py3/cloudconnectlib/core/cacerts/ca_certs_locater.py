@@ -58,7 +58,7 @@ def _get():
 
         if ssl_ca_certs:  # only update temp cert file when there's additional PEM certs found
             cert_files = [ssl_ca_certs, _read_httplib2_default_certs()]
-            _update_temp_cert_file(temp_cert_file_path, cert_files)
+            _update_temp_c_file(temp_cert_file_path, cert_files)
             TEMP_CERT_FILE_PATH = temp_cert_file_path
         else:
             _fallback()
@@ -106,12 +106,12 @@ def _read_pem_file(path):
         return ""
 
 
-def _update_temp_cert_file(temp_file, pem_texts):
-    with open(temp_file, mode='w') as temp_cert_file:
-        for pem_text in pem_texts:
-            if len(pem_text) > 0:
-                temp_cert_file.write(pem_text + '\n')
-        temp_cert_file.flush()
+def _update_temp_c_file(temp_file, p):
+    with open(temp_file, mode='w') as tcf:
+        for ps in p:
+            if len(ps) > 0:
+                tcf.write(ps + '\n')
+        tcf.flush()
     atexit.register(_do_safe_remove, temp_file)
 
 
