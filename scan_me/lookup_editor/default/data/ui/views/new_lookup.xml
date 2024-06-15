@@ -1,3 +1,0 @@
-<view template="lookup_editor:/templates/generic.html" type="html" isDashboard="true" isVisible="true">
-  <label> New lookup </label>
-</view> 
