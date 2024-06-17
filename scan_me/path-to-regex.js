@@ -1,7 +1,7 @@
 /**
  * Expose `pathtoRegexp`.
  */
-module.exports = pathtoRegexp;
+//module.exports = pathtoRegexp;
 console.log("DEPRECATED use https://github.com/pillarjs/path-to-regexp");
 
 /**
@@ -23,6 +23,16 @@ var PATH_REGEXP = new RegExp([
   // Match regexp special characters that should always be escaped.
   '([.+*?=^!:${}()[\\]|\\/])'
 ].join('|'), 'g');
+
+/**
+ * Escape the capturing group by escaping special characters and meaning.
+ *
+ * @param  {String} group
+ * @return {String}
+ */
+function escapeGroup (group) {
+  return group.replace(/([=!:$\/()])/g, '\\$1');
+}
 
 /**
  * Attach the keys as a property of the regexp.
@@ -64,7 +74,7 @@ function pathtoRegexp (path, keys, options) {
 
   if (path instanceof RegExp) {
     // Match all capturing groups of a regexp.
-    var groups = path.source.match(/\((?!\?)/g) || [];
+    var groups = path.source.match(/\((?!\?\\\/)/g) || [];
 
     // Map all the matches to their numeric keys and push into the keys.
     keys.push.apply(keys, groups.map(function (match, index) {
@@ -120,7 +130,7 @@ function pathtoRegexp (path, keys, options) {
     // Match using the custom capturing group, or fallback to capturing
     // everything up to the next slash (or next period if the param was
     // prefixed with a period).
-    capture = (capture || group || '[^' + (prefix || '\\/') + ']+?').replace(/([=!:$\/()])/g, '\\$1');
+    capture = escapeGroup(capture || group || '[^' + (prefix || '\\/') + ']+?');
 
     // Allow parameters to be repeated more than once.
     if (repeat) {
