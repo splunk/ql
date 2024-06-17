@@ -25,16 +25,6 @@ var PATH_REGEXP = new RegExp([
 ].join('|'), 'g');
 
 /**
- * Escape the capturing group by escaping special characters and meaning.
- *
- * @param  {String} group
- * @return {String}
- */
-function escapeGroup (group) {
-  return group.replace(/([=!:$\/()])/g, '\\$1');
-}
-
-/**
  * Attach the keys as a property of the regexp.
  *
  * @param  {RegExp} re
@@ -130,7 +120,8 @@ function pathtoRegexp (path, keys, options) {
     // Match using the custom capturing group, or fallback to capturing
     // everything up to the next slash (or next period if the param was
     // prefixed with a period).
-    capture = escapeGroup(capture || group || '[^' + (prefix || '\\/') + ']+?');
+    capture = (capture || group || '[^' + (prefix || '\\/') + ']+?').replace(/([=!:$\/()])/g, '\\$1');
+
 
     // Allow parameters to be repeated more than once.
     if (repeat) {
