@@ -122,7 +122,6 @@ function pathtoRegexp (path, keys, options) {
     // prefixed with a period).
     capture = (capture || group || '[^' + (prefix || '\\/') + ']+?').replace(/([=!:$\/()])/g, '\\$1');
 
-
     // Allow parameters to be repeated more than once.
     if (repeat) {
       capture = capture + '(?:' + prefix + capture + ')*';
