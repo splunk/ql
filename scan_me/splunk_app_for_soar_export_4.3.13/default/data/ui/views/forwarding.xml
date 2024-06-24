@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<view template="phantom:/templates/forwarding.html" type="html">
+	<label>Event Forwarding</label>
+</view>
+
+<!-- <dashboard script="phantom_splunk.js" stylesheet="phantom.css">
+  <label>Event Forwarding</label>
+
+<row>
+    <panel>
+<!- Use an HTML file from the webhook app. ->
+      <html src="phantom:forwarding.html">
+      </html>
+
+    </panel>
+</row>
+</dashboard> -->

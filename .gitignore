@@ -2,5 +2,6 @@
 /meh
 /build
 .DS_STORE
+/import_test
 
 index.html

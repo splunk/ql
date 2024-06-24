@@ -1,0 +1,6 @@
+<nav>
+    <view name="forwarding" default="true"/>
+    <view name="configurations"/>
+    <view name="mapping"/>
+    <view name="workbooks"/>
+</nav>

@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<view template="phantom:/templates/configurations.html" type="html">
+	<label>Configurations</label>
+</view>

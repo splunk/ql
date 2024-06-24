@@ -1,0 +1,107 @@
+<!--File: runphantomplaybook.html
+Copyright (c) 2016-2024 Splunk Inc.
+
+SPLUNK CONFIDENTIAL - Use or disclosure of this material in whole or in part
+without a valid written license from Splunk Inc. is PROHIBITED.
+-->
+
+<form class="form-horizontal form-complex">
+  <div style="margin: 15px">
+    <span><b>Note</b>: If your Splunk SOAR connection is not successful, the system saves events to send to Splunk SOAR later. Events with key names containing periods will not be saved or sent after the connection is reestablished.</span>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="site">SOAR Instance and Playbook</label>
+    <div class="controls">
+      <splunk-search-dropdown name="action.runphantomplaybook.param.server_playbook_name"
+        search="| rest /servicesNS/nobody/phantom/target_playbook_ar | sort +title" label-field="title"
+        value-field="title">
+      </splunk-search-dropdown>
+      <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">*Forward results
+        and run playbook to this Server/Asset.</span>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="runphantomplaybook_sensitivity">Sensitivity</label>
+    <div class="controls">
+      <splunk-search-dropdown name="action.runphantomplaybook.param.sensitivity"
+        search="| inputlookup phantom_sensitivities | table label, value" 
+        label-field="label" 
+        value-field="value"
+        placeholder="Test">
+      </splunk-search-dropdown>
+      <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">*Sensitivity
+        level for these events.</span>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="runphantomplaybook_severity">Severity</label>
+    <div class="controls">
+      <splunk-search-dropdown name="action.runphantomplaybook.param.severity"
+        search="| rest /servicesNS/nobody/phantom/target_severity_ar | sort +title" label-field="title"
+        value-field="title">
+      </splunk-search-dropdown>
+      <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">*Severity of these
+        events.</span>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="site">Label</label>
+    <div class="controls">
+      <input name="action.runphantomplaybook.param.label" id="phantom-label">
+      <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">Label for these
+        events.</span>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="runphantomplaybook_container_name">Container Name</label>
+    <div class="controls">
+      <splunk-select name="action.runphantomplaybook.param.container_name" id="phantom-container_name"
+        style="display: grid;">
+        <option value="search_name" selected="true">Search Name</option>
+        <option value="source">Source</option>
+      </splunk-select>
+      <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">Container name in
+        SOAR.</span>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="runphantomplaybook_grouping">Grouping</label>
+    <div class="controls">
+      <label class="checkbox" for="phantom-grouping">
+        <input type="checkbox" name="action.runphantomplaybook.param.grouping" id="phantom-grouping" value="1" />
+        <span style="white-space: nowrap;">Collect artifacts into one container</span>
+        <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">Applies when ES
+          or CIM are installed.</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="worker_set">Worker Set</label>
+    <div class="controls">
+      <splunk-search-dropdown name="action.runphantomplaybook.param._cam_workers" id="worker_set"
+        search="| `cam_workers`" label-field="worker_set" value-field="cam_workers">
+      </splunk-search-dropdown>
+      <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">Select adaptive
+        response relay worker set. Use "local" for non-adaptive response relay server.</span>
+    </div>
+  </div>
+
+  <div class="control-group">
+    <label class="control-label" for="site">Alert Action Account</label>
+    <div class="controls">
+      <splunk-search-dropdown name="action.runphantomplaybook.param.relay_account"
+        search="| rest /servicesNS/nobody/phantom/ta_addonphantom_account | sort +title" label-field="title"
+        value-field="title">
+      </splunk-search-dropdown>
+      <span class="help-block" style="display: block; position: static; width: auto; margin-left: 0;">Select Account
+        from SOAR Alert Action Configuration. Use blank for non-adaptive response relay server.</span>
+    </div>
+  </div>
+</form>

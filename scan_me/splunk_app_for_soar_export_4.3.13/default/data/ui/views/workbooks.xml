@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<view template="phantom:/templates/workbooks.html" type="html">
+	<label>Workbooks</label>
+</view>

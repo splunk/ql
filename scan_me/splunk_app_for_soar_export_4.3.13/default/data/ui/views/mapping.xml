@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<view template="phantom:/templates/mapping.html" type="html">
+	<label>Global Field Mappings</label>
+</view>
